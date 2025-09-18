@@ -1,4 +1,5 @@
-# Ignore CMake build directory
 build/
+.vs/
+.vscode/
 
 
