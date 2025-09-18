@@ -13,13 +13,18 @@ void line(int ax, int ay, int bx, int by, TGAImage &framebuffer, TGAColor color)
         std::swap(ax, bx);
         std::swap(ay, by);
     }
-    float y = ay
+    float y = ay;
+    float ierror = 0;
     for (int x=ax; x<=bx; x++) {
         if (steep) // if transposed, de−transpose
             framebuffer.set(y, x, color);
         else
             framebuffer.set(x, y, color);
-        y = (y-ay) / static_cast<float>(bx-ax);
+        ierror += 2 * std::abs(by-ay);
+        if (ierror > bx-ax) {
+            y += by > ay ? 1 : -1;
+            ierror -=2 * (bx-ax);
+        }
     }
 }
 
