@@ -7,6 +7,7 @@ Model::Model(const std::string filename) {
     std::ifstream in;
     in.open(filename, std::ifstream::in);
     if (in.fail()) return;
+
     std::string line;
     while (!in.eof()) {
         std::getline(in, line);
@@ -15,11 +16,14 @@ Model::Model(const std::string filename) {
         if (!line.compare(0, 2, "v ")) {
             iss >> trash;
             vec3 v;
+
             for (int i : {0,1,2}) iss >> v[i];
+            
             verts.push_back(v);
         } else if (!line.compare(0, 2, "f ")) {
             int f,t,n, cnt = 0;
             iss >> trash;
+
             while (iss >> f >> trash >> t >> trash >> n) {
                 facet_vrt.push_back(--f);
                 cnt++;
