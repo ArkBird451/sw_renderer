@@ -27,6 +27,42 @@ void viewport(const int x, const int y, const int w, const int h) {
     Viewport = {{{w/2., 0, 0, x+w/2.}, {0, h/2., 0, y+h/2.}, {0,0,1,0}, {0,0,0,1}}};
 }
 
+TGAColor hsv_to_rgb(double hue, double saturation = 1.0, double value = 1.0) {
+    // Normalize hue to [0, 360)
+    hue = fmod(hue, 360.0);
+    if (hue < 0) hue += 360.0;
+    
+    // HSV to RGB conversion
+    double h = hue / 60.0;
+    int sector = (int)h;
+    double f = h - sector;
+    double p = 0.0, q = 1.0 - f, t = f;
+    
+    double r, g, b;
+    switch (sector % 6) {
+        case 0: r = 1.0; g = t; b = 0.0; break;
+        case 1: r = q; g = 1.0; b = 0.0; break;
+        case 2: r = 0.0; g = 1.0; b = t; break;
+        case 3: r = 0.0; g = q; b = 1.0; break;
+        case 4: r = t; g = 0.0; b = 1.0; break;
+        case 5: r = 1.0; g = 0.0; b = q; break;
+        default: r = 1.0; g = 0.0; b = 0.0; break;
+    }
+    
+    // Apply saturation and value
+    r = r * saturation * value;
+    g = g * saturation * value;
+    b = b * saturation * value;
+    
+    TGAColor color;
+    color[0] = (unsigned char)(r * 255);  // Red
+    color[1] = (unsigned char)(g * 255);  // Green  
+    color[2] = (unsigned char)(b * 255);  // Blue
+    color.bytespp = 3;
+    
+    return color;
+}
+
 void rasterize(const vec4 clip[3], std::vector<double> &zbuffer, TGAImage &framebuffer, const TGAColor color) {
     vec4 ndc[3]    = { clip[0]/clip[0].w, clip[1]/clip[1].w, clip[2]/clip[2].w };                // normalized device coordinates
     vec2 screen[3] = { (Viewport*ndc[0]).xy(), (Viewport*ndc[1]).xy(), (Viewport*ndc[2]).xy() }; // screen coordinates
@@ -47,6 +83,47 @@ void rasterize(const vec4 clip[3], std::vector<double> &zbuffer, TGAImage &frame
             framebuffer.set(x, y, color);
         }
     }
+}
+
+void cpu_rasterize_models(const std::vector<Model>& models, TGAImage& framebuffer, 
+                         std::vector<double>& zbuffer, const mat<4,4>& Model) {
+    // -- CPU rasterization of all loaded models
+    for (const auto &model : models) {
+        for (int i=0; i<model.nfaces(); i++) {
+            vec4 clip[3];
+            for (int d : {0,1,2}) {
+                vec3 v = model.vert(i, d);
+                clip[d] = Perspective * ModelView * Model * vec4{v.x, v.y, v.z, 1.};
+            }
+            // Use hue-based color cycling for smooth color transitions
+            double hue = (i * 0.618033988749895) * 360.0; // Golden ratio for good distribution
+            TGAColor rnd = hsv_to_rgb(hue);
+            rasterize(clip, zbuffer, framebuffer, rnd);
+        }
+    }
+}
+
+void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::vector<double>& zbuffer, 
+                 std::vector<unsigned char>& rgba, double angleX, double angleY) {
+    const int width = framebuffer.width();
+    const int height = framebuffer.height();
+    
+    // -- Update rotation from input, then build model rotation matrices (Y then X)
+    const double cy = std::cos(angleY), sy = std::sin(angleY);
+    const double cx = std::cos(angleX), sx = std::sin(angleX);
+    mat<4,4> RotY = {{{ cy, 0, sy, 0}, {0, 1, 0, 0}, {-sy, 0, cy, 0}, {0, 0, 0, 1}}};
+    mat<4,4> RotX = {{{ 1, 0, 0, 0}, {0, cx, -sx, 0}, {0, sx, cx, 0}, {0, 0, 0, 1}}};
+    mat<4,4> Model = RotY * RotX;
+
+    // -- Clear CPU framebuffer and z-buffer
+    for (int i=0; i<width*height; ++i) zbuffer[i] = -std::numeric_limits<double>::max();
+    TGAColor clear; clear[0]=30; clear[1]=30; clear[2]=30; clear.bytespp=4;
+    for (int y=0; y<height; ++y) for (int x=0; x<width; ++x) framebuffer.set(x,y,clear);
+
+    // -- CPU rasterization of all loaded models
+    cpu_rasterize_models(models, framebuffer, zbuffer, Model);
+
+    viewer_present_from_tga(framebuffer, rgba);
 }
 
 int main(int argc, char** argv) {
@@ -92,32 +169,7 @@ int main(int argc, char** argv) {
         if (viewer_key_down(ViewerKey_Up))    angleX += speed*dt;
         if (viewer_key_down(ViewerKey_Down))  angleX -= speed*dt;
 
-        // -- Update rotation from input, then build model rotation matrices (Y then X)
-        const double cy = std::cos(angleY), sy = std::sin(angleY);
-        const double cx = std::cos(angleX), sx = std::sin(angleX);
-        mat<4,4> RotY = {{{ cy, 0, sy, 0}, {0, 1, 0, 0}, {-sy, 0, cy, 0}, {0, 0, 0, 1}}};
-        mat<4,4> RotX = {{{ 1, 0, 0, 0}, {0, cx, -sx, 0}, {0, sx, cx, 0}, {0, 0, 0, 1}}};
-        mat<4,4> Model = RotY * RotX;
-
-        // -- Clear CPU framebuffer and z-buffer
-        for (int i=0; i<width*height; ++i) zbuffer[i] = -std::numeric_limits<double>::max();
-        TGAColor clear; clear[0]=30; clear[1]=30; clear[2]=30; clear.bytespp=4;
-        for (int y=0; y<height; ++y) for (int x=0; x<width; ++x) framebuffer.set(x,y,clear);
-
-        // -- CPU rasterization of all loaded models
-        for (const auto &model : models) {
-            for (int i=0; i<model.nfaces(); i++) {
-                vec4 clip[3];
-                for (int d : {0,1,2}) {
-                    vec3 v = model.vert(i, d);
-                    clip[d] = Perspective * ModelView * Model * vec4{v.x, v.y, v.z, 1.};
-                }
-                TGAColor rnd; for (int c=0; c<3; c++) rnd[c] = std::rand()%255;
-                rasterize(clip, zbuffer, framebuffer, rnd);
-            }
-        }
-
-        viewer_present_from_tga(framebuffer, rgba);
+        render_frame(models, framebuffer, zbuffer, rgba, angleX, angleY);
     }
     viewer_shutdown();
     return 0;
