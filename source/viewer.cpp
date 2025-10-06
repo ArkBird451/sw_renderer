@@ -71,6 +71,44 @@ void viewer_present_from_tga(const TGAImage &img, std::vector<unsigned char> &rg
 #endif
 }
 
+void viewer_present_with_timing(const TGAImage &img, std::vector<unsigned char> &rgbaScratch, 
+                                double render_time_ms, double angleX, double angleY) {
+#ifdef USE_RAYLIB
+    if (!g_initialized) return;
+    if ((int)rgbaScratch.size() < img.width()*img.height()*4) rgbaScratch.resize(img.width()*img.height()*4);
+    for (int y = 0; y < img.height(); ++y) {
+        const int srcY = (img.height() - 1 - y);
+        for (int x = 0; x < img.width(); ++x) {
+            TGAColor c = img.get(x, srcY);
+            const int idx = (y*img.width() + x) * 4;
+            rgbaScratch[idx+0] = c[2];
+            rgbaScratch[idx+1] = c[1];
+            rgbaScratch[idx+2] = c[0];
+            rgbaScratch[idx+3] = 255;
+        }
+    }
+    // ==== Begin draw to window ====
+    UpdateTexture(g_tex, rgbaScratch.data());
+    BeginDrawing();
+    ClearBackground(BLACK);
+    DrawTexture(g_tex, 0, 0, WHITE);
+    
+    // Display timing information on screen
+    char timing_text[256];
+    snprintf(timing_text, sizeof(timing_text), "Render Time: %.2f ms", render_time_ms);
+    DrawText(timing_text, 10, 10, 20, GREEN);
+    
+    char angle_text[256];
+    snprintf(angle_text, sizeof(angle_text), "Angle X: %.2f, Y: %.2f", angleX, angleY);
+    DrawText(angle_text, 10, 35, 18, YELLOW);
+    
+    DrawText("Arrow keys: rotate", 10, 58, 16, RAYWHITE);
+    EndDrawing();
+#else
+    (void)img; (void)rgbaScratch; (void)render_time_ms; (void)angleX; (void)angleY;
+#endif
+}
+
 void viewer_shutdown() {
 #ifdef USE_RAYLIB
     if (g_initialized) { UnloadTexture(g_tex); CloseWindow(); g_initialized = false; }

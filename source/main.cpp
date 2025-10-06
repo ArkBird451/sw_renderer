@@ -1,5 +1,7 @@
 #include <limits>
 #include <algorithm>
+#include <chrono>
+#include <iostream>
 #include "geometry.h"
 #include "model.h"
 #include "tgaimage.h"
@@ -67,7 +69,11 @@ TGAColor hsv_to_rgb(double hue, double saturation = 1.0, double value = 1.0) {
 
 
 void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::vector<double>& zbuffer, 
-                 std::vector<unsigned char>& rgba, double angleX, double angleY) {
+                 std::vector<unsigned char>& rgba, double angleX, double angleY, 
+                 double& render_time_ms) {
+    // Start timing
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
     const int width = framebuffer.width();
     const int height = framebuffer.height();
     
@@ -86,7 +92,13 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
     // -- CPU rasterization of all loaded models
     cpu_rasterize_models(models, framebuffer, zbuffer, Model);
 
-    viewer_present_from_tga(framebuffer, rgba);
+    // End timing
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    render_time_ms = duration.count() / 1000.0;
+
+    // Present with timing information
+    viewer_present_with_timing(framebuffer, rgba, render_time_ms, angleX, angleY);
 }
 
 int main(int argc, char** argv) {
@@ -123,16 +135,22 @@ int main(int argc, char** argv) {
 
     double angleY = 0.0;
     double angleX = 0.0;
+    
+    // Timing variables
+    double render_time_ms = 0.0;
+    
     // ==== Main render loop ====
     while (!viewer_should_close()) {
         const double dt = 1.0/60.0; // viewer is vsynced to 60 FPS; keys sampled each loop
         const double speed = 1.5; // radians/sec
-        if (viewer_key_down(ViewerKey_Right)) angleY += speed*dt;
-        if (viewer_key_down(ViewerKey_Left))  angleY -= speed*dt;
-        if (viewer_key_down(ViewerKey_Up))    angleX += speed*dt;
-        if (viewer_key_down(ViewerKey_Down))  angleX -= speed*dt;
+        
+        bool rotation_occurred = false;
+        if (viewer_key_down(ViewerKey_Right)) { angleY += speed*dt; rotation_occurred = true; }
+        if (viewer_key_down(ViewerKey_Left))  { angleY -= speed*dt; rotation_occurred = true; }
+        if (viewer_key_down(ViewerKey_Up))    { angleX += speed*dt; rotation_occurred = true; }
+        if (viewer_key_down(ViewerKey_Down))  { angleX -= speed*dt; rotation_occurred = true; }
 
-        render_frame(models, framebuffer, zbuffer, rgba, angleX, angleY);
+        render_frame(models, framebuffer, zbuffer, rgba, angleX, angleY, render_time_ms);
     }
     viewer_shutdown();
     return 0;
