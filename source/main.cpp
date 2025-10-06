@@ -85,9 +85,8 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
     mat<4,4> Model = RotY * RotX;
 
     // -- Clear CPU framebuffer and z-buffer
-    for (int i=0; i<width*height; ++i) zbuffer[i] = -std::numeric_limits<double>::max();
-    TGAColor clear; clear[0]=30; clear[1]=30; clear[2]=30; clear.bytespp=4;
-    for (int y=0; y<height; ++y) for (int x=0; x<width; ++x) framebuffer.set(x,y,clear);
+    std::fill(zbuffer.begin(), zbuffer.end(), -std::numeric_limits<double>::max());
+    for (int y=0; y<height; ++y) for (int x=0; x<width; ++x) framebuffer.set(x,y,TGAColor{{30,30,30,255}, 4});
 
     // -- CPU rasterization of all loaded models
     cpu_rasterize_models(models, framebuffer, zbuffer, Model);

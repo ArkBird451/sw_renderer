@@ -37,3 +37,8 @@ if (TARGET raylib)
   target_link_libraries(${PROJECT_NAME} PRIVATE raylib)
   target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RAYLIB)
 endif()
+
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(${PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
+endif()
