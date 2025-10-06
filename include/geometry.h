@@ -80,6 +80,10 @@ template<int n> vec<n> normalized(const vec<n>& v) {
     return v / norm(v);
 }
 
+template<int n> double dot(const vec<n>& v1, const vec<n>& v2) {
+    return v1 * v2;
+}
+
 inline vec3 cross(const vec3 &v1, const vec3 &v2) {
     return {v1.y*v2.z - v1.z*v2.y, v1.z*v2.x - v1.x*v2.z, v1.x*v2.y - v1.y*v2.x};
 }

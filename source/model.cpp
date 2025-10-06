@@ -3,7 +3,7 @@
 #include "model.h"
 #include <algorithm>
 
-Model::Model(const std::string filename) {
+Model::Model(const std::string& filename) {
     std::ifstream in;
     in.open(filename, std::ifstream::in);
     if (in.fail()) return;
