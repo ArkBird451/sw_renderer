@@ -29,5 +29,6 @@ extern const vec3 viewPos;
 vec3 calculate_phong_lighting(const vec3& worldPos, const vec3& normal, const Material& mat, const Light& light, const vec3& viewPos);
 void rasterize(const vec4 clip[3], const vec3 worldPos[3], const vec3 normals[3], 
                std::vector<double> &zbuffer, TGAImage &framebuffer);
+void rasterize_simple(const vec4 clip[3], std::vector<double> &zbuffer, TGAImage &framebuffer, const TGAColor color);
 void cpu_rasterize_models(const std::vector<Model>& models, TGAImage& framebuffer, 
                          std::vector<double>& zbuffer, const mat<4,4>& Model);

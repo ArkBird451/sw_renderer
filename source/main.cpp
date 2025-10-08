@@ -10,6 +10,14 @@
 
 mat<4,4> ModelView, Viewport, Perspective;
 
+// Rendering modes
+enum RenderingMode {
+    PHONG_LIGHTING,
+    COLORED_TRIANGLES
+};
+
+RenderingMode current_mode = PHONG_LIGHTING;
+
 
 void lookat(const vec3 eye, const vec3 center, const vec3 up) {
     vec3 z = normalized(eye - center);          // forward (camera space +Z points backward)
@@ -67,6 +75,27 @@ TGAColor hsv_to_rgb(double hue, double saturation = 1.0, double value = 1.0) {
     return color;
 }
 
+void cpu_rasterize_colored_triangles(const std::vector<Model>& models, TGAImage& framebuffer, 
+                                    std::vector<double>& zbuffer, const mat<4,4>& Model) {
+    // -- CPU rasterization with simple colored triangles
+    for (const auto &model : models) {
+        for (int i=0; i<model.nfaces(); i++) {
+            vec4 clip[3];
+            
+            for (int d : {0,1,2}) {
+                vec3 v = model.vert(i, d);
+                clip[d] = Perspective * ModelView * Model * vec4{v.x, v.y, v.z, 1.};
+            }
+            
+            // Use simple HSV color cycling for each triangle
+            double hue = (i * 0.618033988749895) * 360.0; // Golden ratio for good distribution
+            TGAColor triangle_color = hsv_to_rgb(hue);
+            
+            // Simple rasterization without lighting
+            rasterize_simple(clip, zbuffer, framebuffer, triangle_color);
+        }
+    }
+}
 
 void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::vector<double>& zbuffer, 
                  std::vector<unsigned char>& rgba, double angleX, double angleY, 
@@ -89,7 +118,11 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
     for (int y=0; y<height; ++y) for (int x=0; x<width; ++x) framebuffer.set(x,y,TGAColor{{30,30,30,255}, 4});
 
     // -- CPU rasterization of all loaded models
-    cpu_rasterize_models(models, framebuffer, zbuffer, Model);
+    if (current_mode == PHONG_LIGHTING) {
+        cpu_rasterize_models(models, framebuffer, zbuffer, Model);
+    } else {
+        cpu_rasterize_colored_triangles(models, framebuffer, zbuffer, Model);
+    }
 
     // End timing
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -97,7 +130,8 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
     render_time_ms = duration.count() / 1000.0;
 
     // Present with timing information
-    viewer_present_with_timing(framebuffer, rgba, render_time_ms, angleX, angleY);
+    const char* mode_name = (current_mode == PHONG_LIGHTING) ? "Phong Lighting" : "Colored Triangles";
+    viewer_present_with_timing(framebuffer, rgba, render_time_ms, angleX, angleY, mode_name);
 }
 
 int main(int argc, char** argv) {
@@ -148,6 +182,17 @@ int main(int argc, char** argv) {
         if (viewer_key_down(ViewerKey_Left))  { angleY -= speed*dt; rotation_occurred = true; }
         if (viewer_key_down(ViewerKey_Up))    { angleX += speed*dt; rotation_occurred = true; }
         if (viewer_key_down(ViewerKey_Down))  { angleX -= speed*dt; rotation_occurred = true; }
+        
+        // Check for mode switching (Space key)
+        static bool space_pressed = false;
+        if (viewer_key_down(ViewerKey_Space)) {
+            if (!space_pressed) {
+                current_mode = (current_mode == PHONG_LIGHTING) ? COLORED_TRIANGLES : PHONG_LIGHTING;
+                space_pressed = true;
+            }
+        } else {
+            space_pressed = false;
+        }
 
         render_frame(models, framebuffer, zbuffer, rgba, angleX, angleY, render_time_ms);
     }
