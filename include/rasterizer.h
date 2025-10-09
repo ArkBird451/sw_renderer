@@ -31,4 +31,6 @@ void rasterize(const vec4 clip[3], const vec3 worldPos[3], const vec3 normals[3]
                std::vector<double> &zbuffer, TGAImage &framebuffer);
 void rasterize_simple(const vec4 clip[3], std::vector<double> &zbuffer, TGAImage &framebuffer, const TGAColor color);
 void cpu_rasterize_models(const std::vector<Model>& models, TGAImage& framebuffer, 
-                         std::vector<double>& zbuffer, const mat<4,4>& Model);
+                         std::vector<double>& zbuffer, const mat<4,4>& Model, 
+                         bool smooth_shading = true);
+std::vector<vec3> calculate_vertex_normals(const Model& model);

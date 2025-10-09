@@ -113,10 +113,49 @@ void rasterize_simple(const vec4 clip[3], std::vector<double> &zbuffer, TGAImage
     }
 }
 
+std::vector<vec3> calculate_vertex_normals(const Model& model) {
+    std::vector<vec3> vertex_normals(model.nverts(), {0, 0, 0});
+    std::vector<int> vertex_face_count(model.nverts(), 0);
+    
+    // Calculate face normals and accumulate to vertex normals
+    for (int i = 0; i < model.nfaces(); i++) {
+        vec3 v0 = model.vert(i, 0);
+        vec3 v1 = model.vert(i, 1);
+        vec3 v2 = model.vert(i, 2);
+        
+        vec3 edge1 = v1 - v0;
+        vec3 edge2 = v2 - v0;
+        vec3 face_normal = normalized(cross(edge1, edge2));
+        
+        // Add face normal to each vertex
+        for (int j = 0; j < 3; j++) {
+            int vertex_idx = model.get_vertex_index(i, j);
+            vertex_normals[vertex_idx] = vertex_normals[vertex_idx] + face_normal;
+            vertex_face_count[vertex_idx]++;
+        }
+    }
+    
+    // Average the normals for each vertex
+    for (int i = 0; i < model.nverts(); i++) {
+        if (vertex_face_count[i] > 0) {
+            vertex_normals[i] = normalized(vertex_normals[i]);
+        }
+    }
+    
+    return vertex_normals;
+}
+
 void cpu_rasterize_models(const std::vector<Model>& models, TGAImage& framebuffer, 
-                         std::vector<double>& zbuffer, const mat<4,4>& Model) {
+                         std::vector<double>& zbuffer, const mat<4,4>& Model, 
+                         bool smooth_shading) {
     // -- CPU rasterization of all loaded models
     for (const auto &model : models) {
+        // Calculate vertex normals for smooth shading
+        std::vector<vec3> vertex_normals;
+        if (smooth_shading) {
+            vertex_normals = calculate_vertex_normals(model);
+        }
+        
         for (int i=0; i<model.nfaces(); i++) {
             vec4 clip[3];
             vec3 worldPos[3];
@@ -128,14 +167,22 @@ void cpu_rasterize_models(const std::vector<Model>& models, TGAImage& framebuffe
                 clip[d] = Perspective * ModelView * Model * vec4{v.x, v.y, v.z, 1.};
             }
             
-            // Calculate face normal
-            vec3 edge1 = worldPos[1] - worldPos[0];
-            vec3 edge2 = worldPos[2] - worldPos[0];
-            vec3 faceNormal = normalized(cross(edge1, edge2));
-            
-            // Use the same normal for all vertices (flat shading)
-            for (int d : {0,1,2}) {
-                normals[d] = faceNormal;
+            if (smooth_shading) {
+                // Use vertex normals for smooth shading
+                for (int d : {0,1,2}) {
+                    int vertex_idx = model.get_vertex_index(i, d);
+                    normals[d] = vertex_normals[vertex_idx];
+                }
+            } else {
+                // Calculate face normal for flat shading
+                vec3 edge1 = worldPos[1] - worldPos[0];
+                vec3 edge2 = worldPos[2] - worldPos[0];
+                vec3 faceNormal = normalized(cross(edge1, edge2));
+                
+                // Use the same normal for all vertices (flat shading)
+                for (int d : {0,1,2}) {
+                    normals[d] = faceNormal;
+                }
             }
             
             rasterize(clip, worldPos, normals, zbuffer, framebuffer);

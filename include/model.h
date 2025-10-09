@@ -13,4 +13,5 @@ public:
     int nfaces() const; // number of triangles
     vec3 vert(const int i) const;                          // 0 <= i < nverts()
     vec3 vert(const int iface, const int nthvert) const;   // 0 <= iface <= nfaces(), 0 <= nthvert < 3
+    int get_vertex_index(const int iface, const int nthvert) const; // get vertex index for face
 };

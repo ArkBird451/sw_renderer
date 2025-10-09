@@ -47,3 +47,7 @@ vec3 Model::vert(const int i) const {
 vec3 Model::vert(const int iface, const int nthvert) const {
     return verts[facet_vrt[iface*3+nthvert]];
 }
+
+int Model::get_vertex_index(const int iface, const int nthvert) const {
+    return facet_vrt[iface*3+nthvert];
+}

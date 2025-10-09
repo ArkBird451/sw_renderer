@@ -38,6 +38,7 @@ bool viewer_key_down(ViewerKey key) {
         case ViewerKey_Up:    return IsKeyDown(KEY_UP);
         case ViewerKey_Down:  return IsKeyDown(KEY_DOWN);
         case ViewerKey_Space: return IsKeyDown(KEY_SPACE);
+        case ViewerKey_S:     return IsKeyDown(KEY_S);
     }
     return false;
 #else
@@ -73,7 +74,7 @@ void viewer_present_from_tga(const TGAImage &img, std::vector<unsigned char> &rg
 }
 
 void viewer_present_with_timing(const TGAImage &img, std::vector<unsigned char> &rgbaScratch, 
-                                double render_time_ms, double angleX, double angleY, const char* mode_name) {
+                                double render_time_ms, double angleX, double angleY, const char* mode_name, const char* shading_name) {
 #ifdef USE_RAYLIB
     if (!g_initialized) return;
     if ((int)rgbaScratch.size() < img.width()*img.height()*4) rgbaScratch.resize(img.width()*img.height()*4);
@@ -107,10 +108,14 @@ void viewer_present_with_timing(const TGAImage &img, std::vector<unsigned char> 
     snprintf(mode_text, sizeof(mode_text), "Mode: %s", mode_name);
     DrawText(mode_text, 10, 58, 18, BLUE);
     
-    DrawText("Arrow keys: rotate | Space: switch mode", 10, 81, 16, RAYWHITE);
+    char shading_text[256];
+    snprintf(shading_text, sizeof(shading_text), "Shading: %s", shading_name);
+    DrawText(shading_text, 10, 81, 18, PURPLE);
+    
+    DrawText("Arrow keys: rotate | Space: mode | S: shading", 10, 104, 16, RAYWHITE);
     EndDrawing();
 #else
-    (void)img; (void)rgbaScratch; (void)render_time_ms; (void)angleX; (void)angleY; (void)mode_name;
+    (void)img; (void)rgbaScratch; (void)render_time_ms; (void)angleX; (void)angleY; (void)mode_name; (void)shading_name;
 #endif
 }
 

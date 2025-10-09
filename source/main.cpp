@@ -16,7 +16,13 @@ enum RenderingMode {
     COLORED_TRIANGLES
 };
 
+enum ShadingMode {
+    FLAT_SHADING,
+    SMOOTH_SHADING
+};
+
 RenderingMode current_mode = PHONG_LIGHTING;
+ShadingMode current_shading = SMOOTH_SHADING;
 
 
 void lookat(const vec3 eye, const vec3 center, const vec3 up) {
@@ -75,6 +81,7 @@ TGAColor hsv_to_rgb(double hue, double saturation = 1.0, double value = 1.0) {
     return color;
 }
 
+
 void cpu_rasterize_colored_triangles(const std::vector<Model>& models, TGAImage& framebuffer, 
                                     std::vector<double>& zbuffer, const mat<4,4>& Model) {
     // -- CPU rasterization with simple colored triangles
@@ -119,7 +126,8 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
 
     // -- CPU rasterization of all loaded models
     if (current_mode == PHONG_LIGHTING) {
-        cpu_rasterize_models(models, framebuffer, zbuffer, Model);
+        bool use_smooth_shading = (current_shading == SMOOTH_SHADING);
+        cpu_rasterize_models(models, framebuffer, zbuffer, Model, use_smooth_shading);
     } else {
         cpu_rasterize_colored_triangles(models, framebuffer, zbuffer, Model);
     }
@@ -131,7 +139,8 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
 
     // Present with timing information
     const char* mode_name = (current_mode == PHONG_LIGHTING) ? "Phong Lighting" : "Colored Triangles";
-    viewer_present_with_timing(framebuffer, rgba, render_time_ms, angleX, angleY, mode_name);
+    const char* shading_name = (current_shading == SMOOTH_SHADING) ? "Smooth" : "Flat";
+    viewer_present_with_timing(framebuffer, rgba, render_time_ms, angleX, angleY, mode_name, shading_name);
 }
 
 int main(int argc, char** argv) {
@@ -192,6 +201,17 @@ int main(int argc, char** argv) {
             }
         } else {
             space_pressed = false;
+        }
+        
+        // Check for shading mode switching (S key)
+        static bool s_pressed = false;
+        if (viewer_key_down(ViewerKey_S)) {
+            if (!s_pressed) {
+                current_shading = (current_shading == FLAT_SHADING) ? SMOOTH_SHADING : FLAT_SHADING;
+                s_pressed = true;
+            }
+        } else {
+            s_pressed = false;
         }
 
         render_frame(models, framebuffer, zbuffer, rgba, angleX, angleY, render_time_ms);
