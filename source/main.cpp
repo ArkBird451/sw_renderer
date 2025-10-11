@@ -18,7 +18,10 @@ enum RenderingMode {
 
 enum ShadingMode {
     FLAT_SHADING,
-    SMOOTH_SHADING
+    SMOOTH_SHADING,
+    NORMAL_MAPPING,
+    COLOR_TEXTURE,
+    NORMAL_AND_COLOR
 };
 
 RenderingMode current_mode = PHONG_LIGHTING;
@@ -126,8 +129,10 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
 
     // -- CPU rasterization of all loaded models
     if (current_mode == PHONG_LIGHTING) {
-        bool use_smooth_shading = (current_shading == SMOOTH_SHADING);
-        cpu_rasterize_models(models, framebuffer, zbuffer, Model, use_smooth_shading);
+        bool use_smooth_shading = (current_shading == SMOOTH_SHADING || current_shading == NORMAL_MAPPING || current_shading == COLOR_TEXTURE || current_shading == NORMAL_AND_COLOR);
+        bool use_normal_mapping = (current_shading == NORMAL_MAPPING || current_shading == NORMAL_AND_COLOR);
+        bool use_color_texture = (current_shading == COLOR_TEXTURE || current_shading == NORMAL_AND_COLOR);
+        cpu_rasterize_models(models, framebuffer, zbuffer, Model, use_smooth_shading, use_normal_mapping, use_color_texture);
     } else {
         cpu_rasterize_colored_triangles(models, framebuffer, zbuffer, Model);
     }
@@ -139,13 +144,21 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
 
     // Present with timing information
     const char* mode_name = (current_mode == PHONG_LIGHTING) ? "Phong Lighting" : "Colored Triangles";
-    const char* shading_name = (current_shading == SMOOTH_SHADING) ? "Smooth" : "Flat";
-    viewer_present_with_timing(framebuffer, rgba, render_time_ms, angleX, angleY, mode_name, shading_name);
+    const char* shading_name;
+    switch (current_shading) {
+        case FLAT_SHADING: shading_name = "Flat"; break;
+        case SMOOTH_SHADING: shading_name = "Smooth"; break;
+        case NORMAL_MAPPING: shading_name = "Normal Mapping"; break;
+        case COLOR_TEXTURE: shading_name = "Color Texture"; break;
+        case NORMAL_AND_COLOR: shading_name = "Normal + Color"; break;
+    }
+    const char* normal_mapping_status = (current_shading == NORMAL_MAPPING || current_shading == NORMAL_AND_COLOR) ? "ON" : "OFF";
+    viewer_present_with_timing(framebuffer, rgba, render_time_ms, angleX, angleY, mode_name, shading_name, normal_mapping_status);
 }
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " obj/model.obj [normal_map.tga] [color_texture.tga]" << std::endl;
         return 1;
     }
 
@@ -162,7 +175,28 @@ int main(int argc, char** argv) {
     // Load models once
     std::vector<Model> models;
     models.reserve(argc-1);
-    for (int m=1; m<argc; m++) models.emplace_back(argv[m]);
+    if (argc >= 4) {
+        // Load model with normal map and color texture
+        models.emplace_back(argv[1], argv[2], argv[3]);
+        std::cout << "Loading model with normal map and color texture: " << argv[1] << " + " << argv[2] << " + " << argv[3] << std::endl;
+    } else if (argc >= 3) {
+        // Load model with normal map
+        models.emplace_back(argv[1], argv[2]);
+        std::cout << "Loading model with normal map: " << argv[1] << " + " << argv[2] << std::endl;
+    } else {
+        // Load model without textures
+        models.emplace_back(argv[1]);
+        std::cout << "Loading model without textures: " << argv[1] << std::endl;
+    }
+    
+    // Check if any model has normal mapping
+    bool any_model_has_normal = false;
+    for (const auto& model : models) {
+        if (model.has_normal()) {
+            any_model_has_normal = true;
+            break;
+        }
+    }
 
     // Initialize viewer
     if (!viewer_init(width, height, "sw_renderer - interactive")) {
@@ -203,11 +237,11 @@ int main(int argc, char** argv) {
             space_pressed = false;
         }
         
-        // Check for shading mode switching (S key)
+        // Check for shading mode cycling (S key)
         static bool s_pressed = false;
         if (viewer_key_down(ViewerKey_S)) {
             if (!s_pressed) {
-                current_shading = (current_shading == FLAT_SHADING) ? SMOOTH_SHADING : FLAT_SHADING;
+                current_shading = (ShadingMode)((current_shading + 1) % 5);
                 s_pressed = true;
             }
         } else {

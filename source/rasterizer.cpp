@@ -52,7 +52,7 @@ vec3 calculate_phong_lighting(const vec3& worldPos, const vec3& normal, const Ma
 }
 
 void rasterize(const vec4 clip[3], const vec3 worldPos[3], const vec3 normals[3], 
-               std::vector<double> &zbuffer, TGAImage &framebuffer) {
+               const vec2 texCoords[3], const Model& model, std::vector<double> &zbuffer, TGAImage &framebuffer, bool use_normal_mapping, bool use_color_texture) {
     vec4 ndc[3]    = { clip[0]/clip[0].w, clip[1]/clip[1].w, clip[2]/clip[2].w };                // normalized device coordinates
     vec2 screen[3] = { (Viewport*ndc[0]).xy(), (Viewport*ndc[1]).xy(), (Viewport*ndc[2]).xy() }; // screen coordinates
 
@@ -71,18 +71,59 @@ void rasterize(const vec4 clip[3], const vec3 worldPos[3], const vec3 normals[3]
             if (z <= zbuffer[x+y*framebuffer.width()]) continue;
             zbuffer[x+y*framebuffer.width()] = z;
             
-            // Interpolate world position and normal using barycentric coordinates
+            // Interpolate world position, normal, and UV coordinates using barycentric coordinates
             vec3 worldPos_interp = bc.x * worldPos[0] + bc.y * worldPos[1] + bc.z * worldPos[2];
             vec3 normal_interp = bc.x * normals[0] + bc.y * normals[1] + bc.z * normals[2];
+            vec2 uv_interp = bc.x * texCoords[0] + bc.y * texCoords[1] + bc.z * texCoords[2];
             
-            // Calculate Phong lighting
-            vec3 lighting = calculate_phong_lighting(worldPos_interp, normal_interp, material, light, viewPos);
+            // Sample normal map if available and enabled
+            vec3 final_normal = normal_interp;
+            if (use_normal_mapping && model.has_normal()) {
+                vec3 normal_map_sample = model.normal(uv_interp);
+                
+                // Calculate tangent space
+                vec3 tangent, bitangent;
+                // For simplicity, we'll use a basic tangent space calculation
+                // In a full implementation, you'd want to pre-calculate these
+                vec3 edge1 = worldPos[1] - worldPos[0];
+                vec3 edge2 = worldPos[2] - worldPos[0];
+                vec2 deltaUV1 = texCoords[1] - texCoords[0];
+                vec2 deltaUV2 = texCoords[2] - texCoords[0];
+                
+                double f = 1.0 / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+                tangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+                tangent.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+                tangent.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+                tangent = normalized(tangent);
+                
+                bitangent = normalized(cross(normal_interp, tangent));
+                
+                // Transform normal from tangent space to world space
+                // TBN matrix: [T, B, N] where T=tangent, B=bitangent, N=normal
+                mat<3,3> TBN = {{{tangent.x, bitangent.x, normal_interp.x},
+                                {tangent.y, bitangent.y, normal_interp.y},
+                                {tangent.z, bitangent.z, normal_interp.z}}};
+                final_normal = normalized(TBN * normal_map_sample);
+            }
+            
+            // Calculate Phong lighting with final normal
+            vec3 lighting = calculate_phong_lighting(worldPos_interp, final_normal, material, light, viewPos);
+            
+            // Apply color texture if enabled
+            vec3 final_color = lighting;
+            if (use_color_texture && model.has_color()) {
+                vec3 texture_color = model.color(uv_interp);
+                // Use texture color as base material color, then apply lighting
+                final_color.x = texture_color.x * lighting.x;
+                final_color.y = texture_color.y * lighting.y;
+                final_color.z = texture_color.z * lighting.z;
+            }
             
             // Convert to TGAColor
             TGAColor color;
-            color[0] = (unsigned char)(lighting.x * 255);
-            color[1] = (unsigned char)(lighting.y * 255);
-            color[2] = (unsigned char)(lighting.z * 255);
+            color[0] = (unsigned char)(final_color.x * 255);
+            color[1] = (unsigned char)(final_color.y * 255);
+            color[2] = (unsigned char)(final_color.z * 255);
             color.bytespp = 3;
             
             framebuffer.set(x, y, color);
@@ -145,9 +186,36 @@ std::vector<vec3> calculate_vertex_normals(const Model& model) {
     return vertex_normals;
 }
 
+void calculate_tangent_space(const Model& model, int face_idx, vec3& tangent, vec3& bitangent) {
+    vec3 v0 = model.vert(face_idx, 0);
+    vec3 v1 = model.vert(face_idx, 1);
+    vec3 v2 = model.vert(face_idx, 2);
+    
+    vec2 uv0 = model.tex_coord(face_idx, 0);
+    vec2 uv1 = model.tex_coord(face_idx, 1);
+    vec2 uv2 = model.tex_coord(face_idx, 2);
+    
+    vec3 edge1 = v1 - v0;
+    vec3 edge2 = v2 - v0;
+    vec2 deltaUV1 = uv1 - uv0;
+    vec2 deltaUV2 = uv2 - uv0;
+    
+    double f = 1.0 / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+    
+    tangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+    tangent.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+    tangent.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+    tangent = normalized(tangent);
+    
+    bitangent.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
+    bitangent.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
+    bitangent.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
+    bitangent = normalized(bitangent);
+}
+
 void cpu_rasterize_models(const std::vector<Model>& models, TGAImage& framebuffer, 
                          std::vector<double>& zbuffer, const mat<4,4>& Model, 
-                         bool smooth_shading) {
+                         bool smooth_shading, bool use_normal_mapping, bool use_color_texture) {
     // -- CPU rasterization of all loaded models
     for (const auto &model : models) {
         // Calculate vertex normals for smooth shading
@@ -160,11 +228,13 @@ void cpu_rasterize_models(const std::vector<Model>& models, TGAImage& framebuffe
             vec4 clip[3];
             vec3 worldPos[3];
             vec3 normals[3];
+            vec2 texCoords[3];
             
             for (int d : {0,1,2}) {
                 vec3 v = model.vert(i, d);
                 worldPos[d] = v;  // Store world position before transformation
                 clip[d] = Perspective * ModelView * Model * vec4{v.x, v.y, v.z, 1.};
+                texCoords[d] = model.tex_coord(i, d);
             }
             
             if (smooth_shading) {
@@ -185,7 +255,7 @@ void cpu_rasterize_models(const std::vector<Model>& models, TGAImage& framebuffe
                 }
             }
             
-            rasterize(clip, worldPos, normals, zbuffer, framebuffer);
+            rasterize(clip, worldPos, normals, texCoords, model, zbuffer, framebuffer, use_normal_mapping, use_color_texture);
         }
     }
 }

@@ -28,9 +28,10 @@ extern const vec3 viewPos;
 // Function declarations
 vec3 calculate_phong_lighting(const vec3& worldPos, const vec3& normal, const Material& mat, const Light& light, const vec3& viewPos);
 void rasterize(const vec4 clip[3], const vec3 worldPos[3], const vec3 normals[3], 
-               std::vector<double> &zbuffer, TGAImage &framebuffer);
+               const vec2 texCoords[3], const Model& model, std::vector<double> &zbuffer, TGAImage &framebuffer, bool use_normal_mapping = true, bool use_color_texture = false);
 void rasterize_simple(const vec4 clip[3], std::vector<double> &zbuffer, TGAImage &framebuffer, const TGAColor color);
 void cpu_rasterize_models(const std::vector<Model>& models, TGAImage& framebuffer, 
                          std::vector<double>& zbuffer, const mat<4,4>& Model, 
-                         bool smooth_shading = true);
+                         bool smooth_shading = true, bool use_normal_mapping = true, bool use_color_texture = false);
 std::vector<vec3> calculate_vertex_normals(const Model& model);
+void calculate_tangent_space(const Model& model, int face_idx, vec3& tangent, vec3& bitangent);

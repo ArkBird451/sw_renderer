@@ -74,7 +74,7 @@ void viewer_present_from_tga(const TGAImage &img, std::vector<unsigned char> &rg
 }
 
 void viewer_present_with_timing(const TGAImage &img, std::vector<unsigned char> &rgbaScratch, 
-                                double render_time_ms, double angleX, double angleY, const char* mode_name, const char* shading_name) {
+                                double render_time_ms, double angleX, double angleY, const char* mode_name, const char* shading_name, const char* normal_mapping_status) {
 #ifdef USE_RAYLIB
     if (!g_initialized) return;
     if ((int)rgbaScratch.size() < img.width()*img.height()*4) rgbaScratch.resize(img.width()*img.height()*4);
@@ -112,10 +112,14 @@ void viewer_present_with_timing(const TGAImage &img, std::vector<unsigned char> 
     snprintf(shading_text, sizeof(shading_text), "Shading: %s", shading_name);
     DrawText(shading_text, 10, 81, 18, PURPLE);
     
-    DrawText("Arrow keys: rotate | Space: mode | S: shading", 10, 104, 16, RAYWHITE);
+    char normal_text[256];
+    snprintf(normal_text, sizeof(normal_text), "Normal Mapping: %s", normal_mapping_status);
+    DrawText(normal_text, 10, 104, 18, ORANGE);
+    
+    DrawText("Arrow keys: rotate | Space: mode | S: cycle shading", 10, 127, 16, RAYWHITE);
     EndDrawing();
 #else
-    (void)img; (void)rgbaScratch; (void)render_time_ms; (void)angleX; (void)angleY; (void)mode_name; (void)shading_name;
+    (void)img; (void)rgbaScratch; (void)render_time_ms; (void)angleX; (void)angleY; (void)mode_name; (void)shading_name; (void)normal_mapping_status;
 #endif
 }
 
