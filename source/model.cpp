@@ -39,6 +39,10 @@ Model::Model(const std::string& filename) {
             }
         }
     }
+    
+    // Calculate tangent and bitangent vectors for each face
+    calculate_tangent_space();
+    
     std::cerr << "# v# " << nverts() << " f# "  << nfaces() << " vt# " << tex_coords.size() << std::endl;
 }
 
@@ -124,4 +128,67 @@ vec3 Model::color(const vec2& uv) const {
     color.z = c[2] / 255.0; // Blue (from red channel)
     
     return color;
+}
+
+void Model::calculate_tangent_space() {
+    tangents.clear();
+    bitangents.clear();
+    
+    for (int i = 0; i < nfaces(); i++) {
+        // Get triangle vertices
+        vec3 v0 = vert(i, 0);
+        vec3 v1 = vert(i, 1);
+        vec3 v2 = vert(i, 2);
+        
+        // Get texture coordinates
+        vec2 uv0 = tex_coord(i, 0);
+        vec2 uv1 = tex_coord(i, 1);
+        vec2 uv2 = tex_coord(i, 2);
+        
+        // Calculate edges
+        vec3 edge1 = v1 - v0;
+        vec3 edge2 = v2 - v0;
+        vec2 deltaUV1 = uv1 - uv0;
+        vec2 deltaUV2 = uv2 - uv0;
+        
+        // Calculate tangent and bitangent
+        double f = 1.0 / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+        
+        vec3 tangent;
+        tangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+        tangent.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+        tangent.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+        tangent = normalized(tangent);
+        
+        vec3 bitangent;
+        bitangent.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
+        bitangent.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
+        bitangent.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
+        bitangent = normalized(bitangent);
+        
+        // Store tangent and bitangent for each vertex of the triangle
+        tangents.push_back(tangent);
+        tangents.push_back(tangent);
+        tangents.push_back(tangent);
+        
+        bitangents.push_back(bitangent);
+        bitangents.push_back(bitangent);
+        bitangents.push_back(bitangent);
+    }
+}
+
+vec3 Model::tangent(const int iface, const int nthvert) const {
+    int idx = iface * 3 + nthvert;
+    if (idx >= 0 && idx < tangents.size()) {
+        return tangents[idx];
+    }
+    return {1, 0, 0}; // Default tangent
+}
+
+vec3 Model::bitangent(const int iface, const int nthvert) const {
+    int idx = iface * 3 + nthvert;
+    if (idx >= 0 && idx < bitangents.size()) {
+        return bitangents[idx];
+    }
+    return {0, 1, 0}; // Default bitangent
 }

@@ -39,6 +39,7 @@ bool viewer_key_down(ViewerKey key) {
         case ViewerKey_Down:  return IsKeyDown(KEY_DOWN);
         case ViewerKey_Space: return IsKeyDown(KEY_SPACE);
         case ViewerKey_S:     return IsKeyDown(KEY_S);
+        case ViewerKey_H:     return IsKeyDown(KEY_H);
     }
     return false;
 #else
@@ -74,7 +75,7 @@ void viewer_present_from_tga(const TGAImage &img, std::vector<unsigned char> &rg
 }
 
 void viewer_present_with_timing(const TGAImage &img, std::vector<unsigned char> &rgbaScratch, 
-                                double render_time_ms, double angleX, double angleY, const char* mode_name, const char* shading_name, const char* normal_mapping_status) {
+                                double render_time_ms, double angleX, double angleY, const char* mode_name, const char* shading_name, const char* normal_mapping_status, const char* shadow_status) {
 #ifdef USE_RAYLIB
     if (!g_initialized) return;
     if ((int)rgbaScratch.size() < img.width()*img.height()*4) rgbaScratch.resize(img.width()*img.height()*4);
@@ -116,10 +117,14 @@ void viewer_present_with_timing(const TGAImage &img, std::vector<unsigned char> 
     snprintf(normal_text, sizeof(normal_text), "Normal Mapping: %s", normal_mapping_status);
     DrawText(normal_text, 10, 104, 18, ORANGE);
     
-    DrawText("Arrow keys: rotate | Space: mode | S: cycle shading", 10, 127, 16, RAYWHITE);
+    char shadow_text[256];
+    snprintf(shadow_text, sizeof(shadow_text), "Shadow Mapping: %s", shadow_status);
+    DrawText(shadow_text, 10, 127, 18, RED);
+    
+    DrawText("Arrow keys: rotate | Space: mode | S: cycle shading | H: toggle shadows", 10, 150, 16, RAYWHITE);
     EndDrawing();
 #else
-    (void)img; (void)rgbaScratch; (void)render_time_ms; (void)angleX; (void)angleY; (void)mode_name; (void)shading_name; (void)normal_mapping_status;
+    (void)img; (void)rgbaScratch; (void)render_time_ms; (void)angleX; (void)angleY; (void)mode_name; (void)shading_name; (void)normal_mapping_status; (void)shadow_status;
 #endif
 }
 

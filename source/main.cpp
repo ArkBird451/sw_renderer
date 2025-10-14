@@ -26,6 +26,10 @@ enum ShadingMode {
 
 RenderingMode current_mode = PHONG_LIGHTING;
 ShadingMode current_shading = SMOOTH_SHADING;
+bool use_shadow_mapping = true;  // Enabled by default
+bool use_fast_shadows = true;  // Use simplified shadow calculation
+ShadowMap shadow_map(512, 512);  // Shadow map resolution (width, height)
+double last_angleX = -999, last_angleY = -999;  // Track rotation changes
 
 
 void lookat(const vec3 eye, const vec3 center, const vec3 up) {
@@ -127,12 +131,58 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
     std::fill(zbuffer.begin(), zbuffer.end(), -std::numeric_limits<double>::max());
     for (int y=0; y<height; ++y) for (int x=0; x<width; ++x) framebuffer.set(x,y,TGAColor{{30,30,30,255}, 4});
 
+    // -- Setup shadow mapping if enabled (only regenerate when rotation changes)
+    if (use_shadow_mapping && current_mode == PHONG_LIGHTING) {
+        // Check if rotation has changed significantly
+        bool rotation_changed = (std::abs(angleX - last_angleX) > 0.01 || std::abs(angleY - last_angleY) > 0.01);
+        
+        if (rotation_changed) {
+            // Setup light view and projection matrices
+            vec3 light_pos = light.position;
+            vec3 light_target = {0, 0, 0};
+            vec3 light_up = {0, 1, 0};
+            
+            // Create light view matrix (look at from light position)
+            vec3 z = normalized(light_pos - light_target);
+            vec3 x = normalized(cross(light_up, z));
+            vec3 y = cross(z, x);
+            shadow_map.light_view = {{{x.x, x.y, x.z, -dot(x, light_pos)},
+                                     {y.x, y.y, y.z, -dot(y, light_pos)},
+                                     {z.x, z.y, z.z, -dot(z, light_pos)},
+                                     {0, 0, 0, 1}}};
+            
+            // Create light projection matrix (orthographic for directional light)
+            double near_plane = 0.1;
+            double far_plane = 50.0;
+            double left = -10.0, right = 10.0;
+            double bottom = -10.0, top = 10.0;
+            shadow_map.light_projection = {{{2.0/(right-left), 0, 0, -(right+left)/(right-left)},
+                                           {0, 2.0/(top-bottom), 0, -(top+bottom)/(top-bottom)},
+                                           {0, 0, -2.0/(far_plane-near_plane), -(far_plane+near_plane)/(far_plane-near_plane)},
+                                           {0, 0, 0, 1}}};
+            
+            // Render shadow map
+            render_shadow_map(models, shadow_map, Model);
+            
+            // Update last rotation angles
+            last_angleX = angleX;
+            last_angleY = angleY;
+        }
+    }
+    
     // -- CPU rasterization of all loaded models
     if (current_mode == PHONG_LIGHTING) {
         bool use_smooth_shading = (current_shading == SMOOTH_SHADING || current_shading == NORMAL_MAPPING || current_shading == COLOR_TEXTURE || current_shading == NORMAL_AND_COLOR);
         bool use_normal_mapping = (current_shading == NORMAL_MAPPING || current_shading == NORMAL_AND_COLOR);
         bool use_color_texture = (current_shading == COLOR_TEXTURE || current_shading == NORMAL_AND_COLOR);
-        cpu_rasterize_models(models, framebuffer, zbuffer, Model, use_smooth_shading, use_normal_mapping, use_color_texture);
+        
+        if (use_shadow_mapping) {
+            // Use shadow mapping
+            cpu_rasterize_models_with_shadows(models, framebuffer, zbuffer, Model, shadow_map, use_smooth_shading, use_normal_mapping, use_color_texture);
+        } else {
+            // Use regular rendering without shadows
+            cpu_rasterize_models(models, framebuffer, zbuffer, Model, use_smooth_shading, use_normal_mapping, use_color_texture);
+        }
     } else {
         cpu_rasterize_colored_triangles(models, framebuffer, zbuffer, Model);
     }
@@ -153,7 +203,8 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
         case NORMAL_AND_COLOR: shading_name = "Normal + Color"; break;
     }
     const char* normal_mapping_status = (current_shading == NORMAL_MAPPING || current_shading == NORMAL_AND_COLOR) ? "ON" : "OFF";
-    viewer_present_with_timing(framebuffer, rgba, render_time_ms, angleX, angleY, mode_name, shading_name, normal_mapping_status);
+    const char* shadow_status = use_shadow_mapping ? "ON" : "OFF";
+    viewer_present_with_timing(framebuffer, rgba, render_time_ms, angleX, angleY, mode_name, shading_name, normal_mapping_status, shadow_status);
 }
 
 int main(int argc, char** argv) {
@@ -246,6 +297,17 @@ int main(int argc, char** argv) {
             }
         } else {
             s_pressed = false;
+        }
+        
+        // Check for shadow mapping toggle (H key)
+        static bool h_pressed = false;
+        if (viewer_key_down(ViewerKey_H)) {
+            if (!h_pressed) {
+                use_shadow_mapping = !use_shadow_mapping;
+                h_pressed = true;
+            }
+        } else {
+            h_pressed = false;
         }
 
         render_frame(models, framebuffer, zbuffer, rgba, angleX, angleY, render_time_ms);

@@ -2,14 +2,14 @@
 #include <vector>
 #include "tgaimage.h"
 
-enum ViewerKey { ViewerKey_Left, ViewerKey_Right, ViewerKey_Up, ViewerKey_Down, ViewerKey_Space, ViewerKey_S };
+enum ViewerKey { ViewerKey_Left, ViewerKey_Right, ViewerKey_Up, ViewerKey_Down, ViewerKey_Space, ViewerKey_S, ViewerKey_H };
 
 bool viewer_init(int width, int height, const char* title);
 bool viewer_should_close();
 bool viewer_key_down(ViewerKey key);
 void viewer_present_from_tga(const TGAImage &img, std::vector<unsigned char> &rgbaScratch);
 void viewer_present_with_timing(const TGAImage &img, std::vector<unsigned char> &rgbaScratch, 
-                                double render_time_ms, double angleX, double angleY, const char* mode_name, const char* shading_name, const char* normal_mapping_status);
+                                double render_time_ms, double angleX, double angleY, const char* mode_name, const char* shading_name, const char* normal_mapping_status, const char* shadow_status);
 void viewer_shutdown();
 
 
