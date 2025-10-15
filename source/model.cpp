@@ -4,7 +4,7 @@
 #include <algorithm>
 #include "tgaimage.h"
 
-Model::Model(const std::string& filename) {
+ObjModel::ObjModel(const std::string& filename) {
     std::ifstream in;
     in.open(filename, std::ifstream::in);
     if (in.fail()) return;
@@ -46,7 +46,7 @@ Model::Model(const std::string& filename) {
     std::cerr << "# v# " << nverts() << " f# "  << nfaces() << " vt# " << tex_coords.size() << std::endl;
 }
 
-Model::Model(const std::string& filename, const std::string& normal_map_filename) : Model(filename) {
+ObjModel::ObjModel(const std::string& filename, const std::string& normal_map_filename) : ObjModel(filename) {
     if (normal_map.read_tga_file(normal_map_filename.c_str())) {
         normal_map.flip_vertically();
         has_normal_map = true;
@@ -56,7 +56,7 @@ Model::Model(const std::string& filename, const std::string& normal_map_filename
     }
 }
 
-Model::Model(const std::string& filename, const std::string& normal_map_filename, const std::string& color_texture_filename) : Model(filename) {
+ObjModel::ObjModel(const std::string& filename, const std::string& normal_map_filename, const std::string& color_texture_filename) : ObjModel(filename) {
     if (normal_map.read_tga_file(normal_map_filename.c_str())) {
         normal_map.flip_vertically();
         has_normal_map = true;
@@ -74,27 +74,27 @@ Model::Model(const std::string& filename, const std::string& normal_map_filename
     }
 }
 
-int Model::nverts() const { return verts.size(); }
-int Model::nfaces() const { return facet_vrt.size()/3; }
+int ObjModel::nverts() const { return verts.size(); }
+int ObjModel::nfaces() const { return facet_vrt.size()/3; }
 
-vec3 Model::vert(const int i) const {
+vec3 ObjModel::vert(const int i) const {
     return verts[i];
 }
 
-vec3 Model::vert(const int iface, const int nthvert) const {
+vec3 ObjModel::vert(const int iface, const int nthvert) const {
     return verts[facet_vrt[iface*3+nthvert]];
 }
 
-int Model::get_vertex_index(const int iface, const int nthvert) const {
+int ObjModel::get_vertex_index(const int iface, const int nthvert) const {
     return facet_vrt[iface*3+nthvert];
 }
 
-vec2 Model::tex_coord(const int iface, const int nthvert) const {
+vec2 ObjModel::tex_coord(const int iface, const int nthvert) const {
     int idx = facet_tex[iface*3+nthvert];
     return tex_coords[idx];
 }
 
-vec3 Model::normal(const vec2& uv) const {
+vec3 ObjModel::normal(const vec2& uv) const {
     if (!has_normal_map) return {0, 0, 1};
     
     int x = (int)(uv.x * normal_map.width());
@@ -112,7 +112,7 @@ vec3 Model::normal(const vec2& uv) const {
     return normalized(n);
 }
 
-vec3 Model::color(const vec2& uv) const {
+vec3 ObjModel::color(const vec2& uv) const {
     if (!has_color_texture) return {1, 1, 1}; // Default white color
     
     int x = (int)(uv.x * color_texture.width());
@@ -122,15 +122,15 @@ vec3 Model::color(const vec2& uv) const {
     
     TGAColor c = color_texture.get(x, y);
     vec3 color;
-    // Try swapping red and blue channels
-    color.x = c[0] / 255.0; // Red (from blue channel)
+    // TGA stores colors as BGRA, so we need to swap red and blue
+    color.x = c[2] / 255.0; // Red (from red channel)
     color.y = c[1] / 255.0; // Green  
-    color.z = c[2] / 255.0; // Blue (from red channel)
+    color.z = c[0] / 255.0; // Blue (from blue channel)
     
     return color;
 }
 
-void Model::calculate_tangent_space() {
+void ObjModel::calculate_tangent_space() {
     tangents.clear();
     bitangents.clear();
     
@@ -177,7 +177,7 @@ void Model::calculate_tangent_space() {
     }
 }
 
-vec3 Model::tangent(const int iface, const int nthvert) const {
+vec3 ObjModel::tangent(const int iface, const int nthvert) const {
     int idx = iface * 3 + nthvert;
     if (idx >= 0 && idx < tangents.size()) {
         return tangents[idx];
@@ -185,7 +185,7 @@ vec3 Model::tangent(const int iface, const int nthvert) const {
     return {1, 0, 0}; // Default tangent
 }
 
-vec3 Model::bitangent(const int iface, const int nthvert) const {
+vec3 ObjModel::bitangent(const int iface, const int nthvert) const {
     int idx = iface * 3 + nthvert;
     if (idx >= 0 && idx < bitangents.size()) {
         return bitangents[idx];

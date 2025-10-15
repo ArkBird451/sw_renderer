@@ -8,6 +8,10 @@
 #include "viewer.h"
 #include "rasterizer.h"
 
+#ifdef USE_RAYLIB
+#include <raylib.h>
+#endif
+
 mat<4,4> ModelView, Viewport, Perspective;
 
 // Rendering modes
@@ -52,7 +56,7 @@ void viewport(const int x, const int y, const int w, const int h) {
     Viewport = {{{w/2., 0, 0, x+w/2.}, {0, h/2., 0, y+h/2.}, {0,0,1,0}, {0,0,0,1}}};
 }
 
-TGAColor hsv_to_rgb(double hue, double saturation = 1.0, double value = 1.0) {
+Color hsv_to_rgb(double hue, double saturation = 1.0, double value = 1.0) {
     // Normalize hue to [0, 360)
     hue = fmod(hue, 360.0);
     if (hue < 0) hue += 360.0;
@@ -79,17 +83,17 @@ TGAColor hsv_to_rgb(double hue, double saturation = 1.0, double value = 1.0) {
     g = g * saturation * value;
     b = b * saturation * value;
     
-    TGAColor color;
-    color[0] = (unsigned char)(r * 255);  // Red
-    color[1] = (unsigned char)(g * 255);  // Green  
-    color[2] = (unsigned char)(b * 255);  // Blue
-    color.bytespp = 3;
+    Color color;
+    color.r = (unsigned char)(r * 255);  // Red
+    color.g = (unsigned char)(g * 255);  // Green  
+    color.b = (unsigned char)(b * 255);  // Blue
+    color.a = 255;
     
     return color;
 }
 
 
-void cpu_rasterize_colored_triangles(const std::vector<Model>& models, TGAImage& framebuffer, 
+void cpu_rasterize_colored_triangles(const std::vector<ObjModel>& models, std::vector<Color>& framebuffer, 
                                     std::vector<double>& zbuffer, const mat<4,4>& Model) {
     // -- CPU rasterization with simple colored triangles
     for (const auto &model : models) {
@@ -103,7 +107,7 @@ void cpu_rasterize_colored_triangles(const std::vector<Model>& models, TGAImage&
             
             // Use simple HSV color cycling for each triangle
             double hue = (i * 0.618033988749895) * 360.0; // Golden ratio for good distribution
-            TGAColor triangle_color = hsv_to_rgb(hue);
+            Color triangle_color = hsv_to_rgb(hue);
             
             // Simple rasterization without lighting
             rasterize_simple(clip, zbuffer, framebuffer, triangle_color);
@@ -111,14 +115,17 @@ void cpu_rasterize_colored_triangles(const std::vector<Model>& models, TGAImage&
     }
 }
 
-void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::vector<double>& zbuffer, 
-                 std::vector<unsigned char>& rgba, double angleX, double angleY, 
-                 double& render_time_ms) {
+void render_frame(const std::vector<ObjModel>& models, std::vector<Color>& framebuffer, std::vector<double>& zbuffer, 
+                 double angleX, double angleY, double& render_time_ms) {
     // Start timing
     auto start_time = std::chrono::high_resolution_clock::now();
     
-    const int width = framebuffer.width();
-    const int height = framebuffer.height();
+    const int width = 800;  // Fixed width
+    const int height = 800;  // Fixed height
+    
+    // -- Clear framebuffer and z-buffer FIRST to eliminate ghosting
+    std::fill(zbuffer.begin(), zbuffer.end(), -std::numeric_limits<double>::max());
+    std::fill(framebuffer.begin(), framebuffer.end(), Color{30, 30, 30, 255});
     
     // -- Update rotation from input, then build model rotation matrices (Y then X)
     const double cy = std::cos(angleY), sy = std::sin(angleY);
@@ -126,10 +133,6 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
     mat<4,4> RotY = {{{ cy, 0, sy, 0}, {0, 1, 0, 0}, {-sy, 0, cy, 0}, {0, 0, 0, 1}}};
     mat<4,4> RotX = {{{ 1, 0, 0, 0}, {0, cx, -sx, 0}, {0, sx, cx, 0}, {0, 0, 0, 1}}};
     mat<4,4> Model = RotY * RotX;
-
-    // -- Clear CPU framebuffer and z-buffer
-    std::fill(zbuffer.begin(), zbuffer.end(), -std::numeric_limits<double>::max());
-    for (int y=0; y<height; ++y) for (int x=0; x<width; ++x) framebuffer.set(x,y,TGAColor{{30,30,30,255}, 4});
 
     // -- Setup shadow mapping if enabled (only regenerate when rotation changes)
     if (use_shadow_mapping && current_mode == PHONG_LIGHTING) {
@@ -187,11 +190,6 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
         cpu_rasterize_colored_triangles(models, framebuffer, zbuffer, Model);
     }
 
-    // End timing
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-    render_time_ms = duration.count() / 1000.0;
-
     // Present with timing information
     const char* mode_name = (current_mode == PHONG_LIGHTING) ? "Phong Lighting" : "Colored Triangles";
     const char* shading_name;
@@ -204,7 +202,74 @@ void render_frame(const std::vector<Model>& models, TGAImage& framebuffer, std::
     }
     const char* normal_mapping_status = (current_shading == NORMAL_MAPPING || current_shading == NORMAL_AND_COLOR) ? "ON" : "OFF";
     const char* shadow_status = use_shadow_mapping ? "ON" : "OFF";
-    viewer_present_with_timing(framebuffer, rgba, render_time_ms, angleX, angleY, mode_name, shading_name, normal_mapping_status, shadow_status);
+    
+    // Direct Raylib rendering (included in timing)
+    BeginDrawing();
+    ClearBackground(BLACK);
+    
+    // Convert framebuffer to RGBA format for efficient texture upload (with Y-flip)
+    static std::vector<unsigned char> rgba_buffer(width * height * 4);
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int src_index = y * width + x;
+            int dst_index = (height - 1 - y) * width + x;  // Flip Y coordinate
+            rgba_buffer[dst_index * 4 + 0] = framebuffer[src_index].r;     // Red
+            rgba_buffer[dst_index * 4 + 1] = framebuffer[src_index].g;     // Green
+            rgba_buffer[dst_index * 4 + 2] = framebuffer[src_index].b;     // Blue
+            rgba_buffer[dst_index * 4 + 3] = framebuffer[src_index].a;     // Alpha
+        }
+    }
+    
+    // Create and update texture efficiently
+    static Texture2D framebuffer_texture = {0};
+    if (framebuffer_texture.id == 0) {
+        Image img = {0};
+        img.data = rgba_buffer.data();
+        img.width = width;
+        img.height = height;
+        img.mipmaps = 1;
+        img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+        framebuffer_texture = LoadTextureFromImage(img);
+    } else {
+        UpdateTexture(framebuffer_texture, rgba_buffer.data());
+    }
+    
+    // Draw the entire framebuffer as a single texture (much faster)
+    DrawTexture(framebuffer_texture, 0, 0, WHITE);
+    
+    // Display timing information
+    char timing_text[256];
+    snprintf(timing_text, sizeof(timing_text), "Render Time: %.2f ms", render_time_ms);
+    DrawText(timing_text, 10, 10, 20, GREEN);
+    
+    char angle_text[256];
+    snprintf(angle_text, sizeof(angle_text), "Angle X: %.2f, Y: %.2f", angleX, angleY);
+    DrawText(angle_text, 10, 35, 18, YELLOW);
+    
+    char mode_text[256];
+    snprintf(mode_text, sizeof(mode_text), "Mode: %s", mode_name);
+    DrawText(mode_text, 10, 58, 18, BLUE);
+    
+    char shading_text[256];
+    snprintf(shading_text, sizeof(shading_text), "Shading: %s", shading_name);
+    DrawText(shading_text, 10, 81, 18, PURPLE);
+    
+    char normal_text[256];
+    snprintf(normal_text, sizeof(normal_text), "Normal Mapping: %s", normal_mapping_status);
+    DrawText(normal_text, 10, 104, 18, ORANGE);
+    
+    char shadow_text[256];
+    snprintf(shadow_text, sizeof(shadow_text), "Shadow Mapping: %s", shadow_status);
+    DrawText(shadow_text, 10, 127, 18, MAGENTA);
+    
+    DrawText("Arrow keys: rotate | Space: mode | S: cycle shading | H: toggle shadows", 10, 150, 16, WHITE);
+    
+    EndDrawing();
+    
+    // End timing (after all display operations)
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    render_time_ms = duration.count() / 1000.0;
 }
 
 int main(int argc, char** argv) {
@@ -224,7 +289,7 @@ int main(int argc, char** argv) {
     viewport(width/16, height/16, width*7/8, height*7/8); // build the Viewport    matrix
 
     // Load models once
-    std::vector<Model> models;
+    std::vector<ObjModel> models;
     models.reserve(argc-1);
     if (argc >= 4) {
         // Load model with normal map and color texture
@@ -255,10 +320,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Persistent CPU framebuffer and staging buffer
-    TGAImage framebuffer(width, height, TGAImage::RGB);
+    // Direct Raylib pixel buffer
+    std::vector<Color> framebuffer(width * height, BLACK);
     std::vector<double> zbuffer(width*height, -std::numeric_limits<double>::max());
-    std::vector<unsigned char> rgba(width*height*4, 255);
 
     double angleY = 0.0;
     double angleX = 0.0;
@@ -310,7 +374,7 @@ int main(int argc, char** argv) {
             h_pressed = false;
         }
 
-        render_frame(models, framebuffer, zbuffer, rgba, angleX, angleY, render_time_ms);
+        render_frame(models, framebuffer, zbuffer, angleX, angleY, render_time_ms);
     }
     viewer_shutdown();
     return 0;

@@ -74,10 +74,12 @@ void viewer_present_from_tga(const TGAImage &img, std::vector<unsigned char> &rg
 #endif
 }
 
-void viewer_present_with_timing(const TGAImage &img, std::vector<unsigned char> &rgbaScratch, 
+void viewer_present_with_timing(const TGAImage &img, 
                                 double render_time_ms, double angleX, double angleY, const char* mode_name, const char* shading_name, const char* normal_mapping_status, const char* shadow_status) {
 #ifdef USE_RAYLIB
     if (!g_initialized) return;
+    // Convert TGA to RGBA for display (minimal buffering)
+    static std::vector<unsigned char> rgbaScratch;
     if ((int)rgbaScratch.size() < img.width()*img.height()*4) rgbaScratch.resize(img.width()*img.height()*4);
     for (int y = 0; y < img.height(); ++y) {
         const int srcY = (img.height() - 1 - y);
@@ -90,10 +92,10 @@ void viewer_present_with_timing(const TGAImage &img, std::vector<unsigned char> 
             rgbaScratch[idx+3] = 255;
         }
     }
-    // ==== Begin draw to window ====
-    UpdateTexture(g_tex, rgbaScratch.data());
+    
     BeginDrawing();
     ClearBackground(BLACK);
+    UpdateTexture(g_tex, rgbaScratch.data());
     DrawTexture(g_tex, 0, 0, WHITE);
     
     // Display timing information on screen
@@ -124,7 +126,7 @@ void viewer_present_with_timing(const TGAImage &img, std::vector<unsigned char> 
     DrawText("Arrow keys: rotate | Space: mode | S: cycle shading | H: toggle shadows", 10, 150, 16, RAYWHITE);
     EndDrawing();
 #else
-    (void)img; (void)rgbaScratch; (void)render_time_ms; (void)angleX; (void)angleY; (void)mode_name; (void)shading_name; (void)normal_mapping_status; (void)shadow_status;
+    (void)img; (void)render_time_ms; (void)angleX; (void)angleY; (void)mode_name; (void)shading_name; (void)normal_mapping_status; (void)shadow_status;
 #endif
 }
 

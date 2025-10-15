@@ -5,7 +5,7 @@
 #include "geometry.h"
 #include "tgaimage.h"
 
-class Model {
+class ObjModel {
     std::vector<vec3> verts = {};    // array of vertices
     std::vector<int> facet_vrt = {}; // per-triangle index in the above array
     std::vector<vec2> tex_coords = {}; // texture coordinates
@@ -17,9 +17,9 @@ class Model {
     bool has_normal_map = false;
     bool has_color_texture = false;
 public:
-    Model(const std::string& filename);
-    Model(const std::string& filename, const std::string& normal_map_filename);
-    Model(const std::string& filename, const std::string& normal_map_filename, const std::string& color_texture_filename);
+    ObjModel(const std::string& filename);
+    ObjModel(const std::string& filename, const std::string& normal_map_filename);
+    ObjModel(const std::string& filename, const std::string& normal_map_filename, const std::string& color_texture_filename);
     int nverts() const; // number of vertices
     int nfaces() const; // number of triangles
     vec3 vert(const int i) const;                          // 0 <= i < nverts()
