@@ -123,3 +123,16 @@ void render_with_ssao(const std::vector<ObjModel>& models, std::vector<Color>& f
                       std::vector<double>& zbuffer, const mat<4,4>& Model, 
                       const ShadowMap& shadow_map, const SSAOData& ssao_data, const SSAOParams& ssao_params,
                       bool smooth_shading = true, bool use_normal_mapping = true, bool use_color_texture = false);
+
+// Toon shader function declarations
+vec3 calculate_toon_lighting(const vec3& worldPos, const vec3& normal, const RenderMaterial& mat, const Light& light, const vec3& viewPos);
+void rasterize_toon(const vec4 clip[3], const vec3 worldPos[3], const vec3 normals[3], 
+                   const vec2 texCoords[3], const vec3 tangents[3], const vec3 bitangents[3],
+                   const ObjModel& model, std::vector<double> &zbuffer, std::vector<Color> &framebuffer, 
+                   bool use_normal_mapping, bool use_color_texture);
+void cpu_rasterize_models_toon(const std::vector<ObjModel>& models, std::vector<Color>& framebuffer, 
+                               std::vector<double>& zbuffer, const mat<4,4>& Model, 
+                               bool smooth_shading = true, bool use_normal_mapping = true, bool use_color_texture = false);
+void render_toon_outlines(const std::vector<ObjModel>& models, std::vector<Color>& framebuffer, 
+                          std::vector<double>& zbuffer, const mat<4,4>& Model, 
+                          bool smooth_shading = true, bool use_normal_mapping = true, bool use_color_texture = false);

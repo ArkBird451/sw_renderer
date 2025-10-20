@@ -671,3 +671,242 @@ void render_with_ssao(const std::vector<ObjModel>& models, std::vector<Color>& f
     // Then apply SSAO
     apply_ssao(framebuffer, zbuffer, ssao_data, ssao_params, 800, 800);
 }
+
+// Toon Shader Implementation
+vec3 calculate_toon_lighting(const vec3& worldPos, const vec3& normal, const RenderMaterial& mat, const Light& light, const vec3& viewPos) {
+    // Calculate standard Phong lighting first
+    vec3 norm = normalized(normal);
+    vec3 lightDir = normalized(light.position - worldPos);
+    vec3 viewDir = normalized(viewPos - worldPos);
+    vec3 reflectDir = normalized(2.0f * dot(norm, lightDir) * norm - lightDir);
+    
+    // Ambient component
+    vec3 ambient = {mat.ambient.x * light.ambient.x, mat.ambient.y * light.ambient.y, mat.ambient.z * light.ambient.z};
+    
+    // Diffuse component
+    float diff = std::max(0.0f, (float)dot(norm, lightDir));
+    vec3 diffuse = {mat.diffuse.x * light.diffuse.x * diff, mat.diffuse.y * light.diffuse.y * diff, mat.diffuse.z * light.diffuse.z * diff};
+    
+    // Specular component
+    float spec = std::pow(std::max(0.0f, (float)dot(viewDir, reflectDir)), mat.shininess);
+    vec3 specular = {mat.specular.x * light.specular.x * spec, mat.specular.y * light.specular.y * spec, mat.specular.z * light.specular.z * spec};
+    
+    // Combine all components
+    vec3 result = ambient + diffuse + specular;
+    
+    // Clamp values to [0,1]
+    result.x = std::min(1.0f, std::max(0.0f, (float)result.x));
+    result.y = std::min(1.0f, std::max(0.0f, (float)result.y));
+    result.z = std::min(1.0f, std::max(0.0f, (float)result.z));
+    
+    // Quantize the lighting into 4 distinct levels for toon effect
+    float intensity = (result.x + result.y + result.z) / 3.0f; // Average intensity
+    
+    // Quantize intensity into 4 levels
+    float quantized_intensity;
+    if (intensity < 0.25f) {
+        quantized_intensity = 0.1f;  // Dark shadow
+    } else if (intensity < 0.5f) {
+        quantized_intensity = 0.3f;  // Medium shadow
+    } else if (intensity < 0.75f) {
+        quantized_intensity = 0.6f;  // Light
+    } else {
+        quantized_intensity = 0.9f;  // Bright highlight
+    }
+    
+    // Apply quantized intensity to the color
+    result.x *= quantized_intensity / intensity;
+    result.y *= quantized_intensity / intensity;
+    result.z *= quantized_intensity / intensity;
+    
+    // Clamp again after quantization
+    result.x = std::min(1.0f, std::max(0.0f, (float)result.x));
+    result.y = std::min(1.0f, std::max(0.0f, (float)result.y));
+    result.z = std::min(1.0f, std::max(0.0f, (float)result.z));
+    
+    return result;
+}
+
+void rasterize_toon(const vec4 clip[3], const vec3 worldPos[3], const vec3 normals[3], 
+                   const vec2 texCoords[3], const vec3 tangents[3], const vec3 bitangents[3],
+                   const ObjModel& model, std::vector<double> &zbuffer, std::vector<Color> &framebuffer, 
+                   bool use_normal_mapping, bool use_color_texture) {
+    vec4 ndc[3]    = { clip[0]/clip[0].w, clip[1]/clip[1].w, clip[2]/clip[2].w };                // normalized device coordinates
+    vec2 screen[3] = { (Viewport*ndc[0]).xy(), (Viewport*ndc[1]).xy(), (Viewport*ndc[2]).xy() }; // screen coordinates
+
+    mat<3,3> ABC = {{ {screen[0].x, screen[0].y, 1.}, {screen[1].x, screen[1].y, 1.}, {screen[2].x, screen[2].y, 1.} }};
+    if (ABC.det()<1) return; // backface culling + discarding triangles that cover less than a pixel
+
+    auto [bbminx,bbmaxx] = std::minmax({screen[0].x, screen[1].x, screen[2].x}); // bounding box for the triangle
+    auto [bbminy,bbmaxy] = std::minmax({screen[0].y, screen[1].y, screen[2].y}); // defined by its top left and bottom right corners
+
+    #pragma omp parallel for
+    for (int y=std::max<int>(bbminy, 0); y<=std::min<int>(bbmaxy, 799); y++) { // clip the bounding box by the screen
+        for (int x=std::max<int>(bbminx, 0); x<=std::min<int>(bbmaxx, 799); x++) {
+            double px = x + 0.5;
+            double py = y + 0.5;
+            vec3 bc = ABC.invert_transpose() * vec3{px, py, 1.}; // barycentric coordinates of {x,y} w.r.t the triangle
+            if (bc.x<0 || bc.y<0 || bc.z<0) continue;            // negative barycentric coordinate as the pixel is outside the triangle
+            double z = bc * vec3{ ndc[0].z, ndc[1].z, ndc[2].z };
+            if (z <= zbuffer[x+y*800]) continue;
+            zbuffer[x+y*800] = z;
+            
+            // Interpolate world position, normal, and UV coordinates using barycentric coordinates
+            vec3 worldPos_interp = bc.x * worldPos[0] + bc.y * worldPos[1] + bc.z * worldPos[2];
+            vec3 normal_interp = bc.x * normals[0] + bc.y * normals[1] + bc.z * normals[2];
+            vec2 uv_interp = bc.x * texCoords[0] + bc.y * texCoords[1] + bc.z * texCoords[2];
+            
+            // Sample normal map if available and enabled
+            vec3 final_normal = normal_interp;
+            if (use_normal_mapping && model.has_normal()) {
+                vec3 normal_map_sample = model.normal(uv_interp);
+                
+                // Interpolate tangent and bitangent vectors
+                vec3 tangent_interp = bc.x * tangents[0] + bc.y * tangents[1] + bc.z * tangents[2];
+                vec3 bitangent_interp = bc.x * bitangents[0] + bc.y * bitangents[1] + bc.z * bitangents[2];
+                
+                // Normalize interpolated vectors
+                tangent_interp = normalized(tangent_interp);
+                bitangent_interp = normalized(bitangent_interp);
+                
+                // Transform normal from tangent space to world space using TBN matrix
+                mat<3,3> TBN = {{{tangent_interp.x, bitangent_interp.x, normal_interp.x},
+                                {tangent_interp.y, bitangent_interp.y, normal_interp.y},
+                                {tangent_interp.z, bitangent_interp.z, normal_interp.z}}};
+                final_normal = normalized(TBN * normal_map_sample);
+            }
+            
+            // Calculate toon lighting
+            vec3 lighting = calculate_toon_lighting(worldPos_interp, final_normal, material, light, viewPos);
+            
+            // Apply color texture if enabled
+            vec3 final_color = lighting;
+            if (use_color_texture && model.has_color()) {
+                vec3 texture_color = model.color(uv_interp);
+                // Use texture color as base material color, then apply lighting
+                final_color.x = texture_color.x * lighting.x;
+                final_color.y = texture_color.y * lighting.y;
+                final_color.z = texture_color.z * lighting.z;
+            }
+            
+            // Convert to Raylib Color
+            Color color;
+            color.r = (unsigned char)(final_color.x * 255);
+            color.g = (unsigned char)(final_color.y * 255);
+            color.b = (unsigned char)(final_color.z * 255);
+            color.a = 255;
+            
+            framebuffer[y * 800 + x] = color;
+        }
+    }
+}
+
+void cpu_rasterize_models_toon(const std::vector<ObjModel>& models, std::vector<Color>& framebuffer, 
+                               std::vector<double>& zbuffer, const mat<4,4>& Model, 
+                               bool smooth_shading, bool use_normal_mapping, bool use_color_texture) {
+    // -- CPU rasterization of all loaded models with toon shading
+    for (const auto &model : models) {
+        // Calculate vertex normals for smooth shading
+        std::vector<vec3> vertex_normals;
+        if (smooth_shading) {
+            vertex_normals = calculate_vertex_normals(model);
+        }
+        
+        for (int i=0; i<model.nfaces(); i++) {
+            vec4 clip[3];
+            vec3 worldPos[3];
+            vec3 normals[3];
+            vec2 texCoords[3];
+            
+            for (int d : {0,1,2}) {
+                vec3 v = model.vert(i, d);
+                worldPos[d] = v;  // Store world position before transformation
+                clip[d] = Perspective * ModelView * Model * vec4{v.x, v.y, v.z, 1.};
+                texCoords[d] = model.tex_coord(i, d);
+            }
+            
+            if (smooth_shading) {
+                // Use vertex normals for smooth shading
+                for (int d : {0,1,2}) {
+                    int vertex_idx = model.get_vertex_index(i, d);
+                    normals[d] = vertex_normals[vertex_idx];
+                }
+            } else {
+                // Calculate face normal for flat shading
+                vec3 edge1 = worldPos[1] - worldPos[0];
+                vec3 edge2 = worldPos[2] - worldPos[0];
+                vec3 faceNormal = normalized(cross(edge1, edge2));
+                
+                // Use the same normal for all vertices (flat shading)
+                for (int d : {0,1,2}) {
+                    normals[d] = faceNormal;
+                }
+            }
+            
+            // Get tangent and bitangent vectors for this face
+            vec3 tangents[3], bitangents[3];
+            for (int d : {0,1,2}) {
+                tangents[d] = model.tangent(i, d);
+                bitangents[d] = model.bitangent(i, d);
+            }
+            
+            rasterize_toon(clip, worldPos, normals, texCoords, tangents, bitangents, model, zbuffer, framebuffer, use_normal_mapping, use_color_texture);
+        }
+    }
+}
+
+void render_toon_outlines(const std::vector<ObjModel>& models, std::vector<Color>& framebuffer, 
+                          std::vector<double>& zbuffer, const mat<4,4>& Model, 
+                          bool smooth_shading, bool use_normal_mapping, bool use_color_texture) {
+    // Create a temporary framebuffer for outline detection
+    std::vector<Color> temp_framebuffer = framebuffer;
+    std::vector<double> temp_zbuffer = zbuffer;
+    
+    // First render the scene with toon shading using the specified shading options
+    cpu_rasterize_models_toon(models, temp_framebuffer, temp_zbuffer, Model, smooth_shading, use_normal_mapping, use_color_texture);
+    
+    // Detect edges by comparing depth differences
+    const double edge_threshold = 0.01; // Threshold for edge detection
+    const int outline_width = 2; // Width of outline in pixels
+    
+    for (int y = outline_width; y < 800 - outline_width; y++) {
+        for (int x = outline_width; x < 800 - outline_width; x++) {
+            double current_depth = temp_zbuffer[y * 800 + x];
+            if (current_depth <= -std::numeric_limits<double>::max()) continue; // Skip background
+            
+            bool is_edge = false;
+            
+            // Check surrounding pixels for depth differences
+            for (int dy = -outline_width; dy <= outline_width; dy++) {
+                for (int dx = -outline_width; dx <= outline_width; dx++) {
+                    if (dx == 0 && dy == 0) continue;
+                    
+                    int nx = x + dx;
+                    int ny = y + dy;
+                    
+                    if (nx < 0 || nx >= 800 || ny < 0 || ny >= 800) continue;
+                    
+                    double neighbor_depth = temp_zbuffer[ny * 800 + nx];
+                    if (neighbor_depth <= -std::numeric_limits<double>::max()) {
+                        is_edge = true; // Edge against background
+                        break;
+                    }
+                    
+                    double depth_diff = std::abs(current_depth - neighbor_depth);
+                    if (depth_diff > edge_threshold) {
+                        is_edge = true;
+                        break;
+                    }
+                }
+                if (is_edge) break;
+            }
+            
+            // Draw black outline
+            if (is_edge) {
+                framebuffer[y * 800 + x] = {0, 0, 0, 255}; // Black outline
+            } else {
+                framebuffer[y * 800 + x] = temp_framebuffer[y * 800 + x]; // Original toon color
+            }
+        }
+    }
+}

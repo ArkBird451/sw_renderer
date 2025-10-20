@@ -17,7 +17,8 @@ mat<4,4> ModelView, Viewport, Perspective;
 // Rendering modes
 enum RenderingMode {
     PHONG_LIGHTING,
-    COLORED_TRIANGLES
+    COLORED_TRIANGLES,
+    TOON_SHADER
 };
 
 enum ShadingMode {
@@ -188,12 +189,24 @@ void render_frame(const std::vector<ObjModel>& models, std::vector<Color>& frame
             // Use regular rendering without shadows
             cpu_rasterize_models(models, framebuffer, zbuffer, Model, use_smooth_shading, use_normal_mapping, use_color_texture);
         }
+    } else if (current_mode == TOON_SHADER) {
+        // Render with toon shader including outlines
+        bool use_smooth_shading = (current_shading == SMOOTH_SHADING || current_shading == NORMAL_MAPPING || current_shading == COLOR_TEXTURE || current_shading == NORMAL_AND_COLOR);
+        bool use_normal_mapping = (current_shading == NORMAL_MAPPING || current_shading == NORMAL_AND_COLOR);
+        bool use_color_texture = (current_shading == COLOR_TEXTURE || current_shading == NORMAL_AND_COLOR);
+        render_toon_outlines(models, framebuffer, zbuffer, Model, use_smooth_shading, use_normal_mapping, use_color_texture);
     } else {
         cpu_rasterize_colored_triangles(models, framebuffer, zbuffer, Model);
     }
 
     // Present with timing information
-    const char* mode_name = (current_mode == PHONG_LIGHTING) ? "Phong Lighting" : "Colored Triangles";
+    const char* mode_name;
+    switch (current_mode) {
+        case PHONG_LIGHTING: mode_name = "Phong Lighting"; break;
+        case COLORED_TRIANGLES: mode_name = "Colored Triangles"; break;
+        case TOON_SHADER: mode_name = "Toon Shader"; break;
+        default: mode_name = "Unknown"; break;
+    }
     const char* shading_name;
     switch (current_shading) {
         case FLAT_SHADING: shading_name = "Flat"; break;
@@ -264,7 +277,7 @@ void render_frame(const std::vector<ObjModel>& models, std::vector<Color>& frame
     snprintf(shadow_text, sizeof(shadow_text), "Shadow Mapping: %s", shadow_status);
     DrawText(shadow_text, 10, 127, 18, MAGENTA);
     
-    DrawText("Arrow keys: rotate | Space: mode | S: cycle shading | H: toggle shadows (with SSAO)", 10, 150, 16, WHITE);
+    DrawText("Arrow keys: rotate | Space: mode (Phong/Colored/Toon) | S: cycle shading | H: toggle shadows", 10, 150, 16, WHITE);
     
     EndDrawing();
     
@@ -347,7 +360,7 @@ int main(int argc, char** argv) {
         static bool space_pressed = false;
         if (viewer_key_down(ViewerKey_Space)) {
             if (!space_pressed) {
-                current_mode = (current_mode == PHONG_LIGHTING) ? COLORED_TRIANGLES : PHONG_LIGHTING;
+                current_mode = (RenderingMode)((current_mode + 1) % 3); // Cycle through all 3 modes
                 space_pressed = true;
             }
         } else {
