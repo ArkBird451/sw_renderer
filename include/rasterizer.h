@@ -126,13 +126,22 @@ void render_with_ssao(const std::vector<ObjModel>& models, std::vector<Color>& f
 
 // Toon shader function declarations
 vec3 calculate_toon_lighting(const vec3& worldPos, const vec3& normal, const RenderMaterial& mat, const Light& light, const vec3& viewPos);
+vec3 calculate_toon_lighting_with_shadows(const vec3& worldPos, const vec3& normal, const RenderMaterial& mat, const Light& light, const vec3& viewPos, const ShadowMap& shadow_map);
 void rasterize_toon(const vec4 clip[3], const vec3 worldPos[3], const vec3 normals[3], 
                    const vec2 texCoords[3], const vec3 tangents[3], const vec3 bitangents[3],
                    const ObjModel& model, std::vector<double> &zbuffer, std::vector<Color> &framebuffer, 
                    bool use_normal_mapping, bool use_color_texture);
+void rasterize_toon_with_shadows(const vec4 clip[3], const vec3 worldPos[3], const vec3 normals[3], 
+                                 const vec2 texCoords[3], const vec3 tangents[3], const vec3 bitangents[3],
+                                 const ObjModel& model, std::vector<double> &zbuffer, std::vector<Color> &framebuffer, 
+                                 const ShadowMap& shadow_map, bool use_normal_mapping, bool use_color_texture);
 void cpu_rasterize_models_toon(const std::vector<ObjModel>& models, std::vector<Color>& framebuffer, 
                                std::vector<double>& zbuffer, const mat<4,4>& Model, 
                                bool smooth_shading = true, bool use_normal_mapping = true, bool use_color_texture = false);
+void cpu_rasterize_models_toon_with_shadows(const std::vector<ObjModel>& models, std::vector<Color>& framebuffer, 
+                                           std::vector<double>& zbuffer, const mat<4,4>& Model, 
+                                           const ShadowMap& shadow_map, bool smooth_shading = true, bool use_normal_mapping = true, bool use_color_texture = false);
 void render_toon_outlines(const std::vector<ObjModel>& models, std::vector<Color>& framebuffer, 
                           std::vector<double>& zbuffer, const mat<4,4>& Model, 
-                          bool smooth_shading = true, bool use_normal_mapping = true, bool use_color_texture = false);
+                          bool smooth_shading = true, bool use_normal_mapping = true, bool use_color_texture = false, 
+                          const ShadowMap& shadow_map = ShadowMap(512, 512), bool use_shadow_mapping = false);

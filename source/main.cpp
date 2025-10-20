@@ -194,7 +194,7 @@ void render_frame(const std::vector<ObjModel>& models, std::vector<Color>& frame
         bool use_smooth_shading = (current_shading == SMOOTH_SHADING || current_shading == NORMAL_MAPPING || current_shading == COLOR_TEXTURE || current_shading == NORMAL_AND_COLOR);
         bool use_normal_mapping = (current_shading == NORMAL_MAPPING || current_shading == NORMAL_AND_COLOR);
         bool use_color_texture = (current_shading == COLOR_TEXTURE || current_shading == NORMAL_AND_COLOR);
-        render_toon_outlines(models, framebuffer, zbuffer, Model, use_smooth_shading, use_normal_mapping, use_color_texture);
+        render_toon_outlines(models, framebuffer, zbuffer, Model, use_smooth_shading, use_normal_mapping, use_color_texture, shadow_map, use_shadow_mapping);
     } else {
         cpu_rasterize_colored_triangles(models, framebuffer, zbuffer, Model);
     }
