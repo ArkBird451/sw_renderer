@@ -1,6 +1,8 @@
 #include "rasterizer.h"
 #include <algorithm>
 #include <cmath>
+#include <random>
+#include <chrono>
 
 // External matrix variables from main.cpp
 extern mat<4,4> ModelView, Viewport, Perspective;
@@ -528,4 +530,144 @@ void rasterize_with_shadows(const vec4 clip[3], const vec3 worldPos[3], const ve
             framebuffer[y * 800 + x] = color;
         }
     }
+}
+
+// SSAO Implementation
+void SSAOData::generate_kernel() {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> dis(0.0f, 1.0f);
+    
+    kernel.clear();
+    kernel.reserve(64); // Reserve space for maximum kernel size
+    
+    for (int i = 0; i < 64; i++) {
+        vec3 sample;
+        sample.x = dis(gen) * 2.0f - 1.0f; // Random between -1 and 1
+        sample.y = dis(gen) * 2.0f - 1.0f;
+        sample.z = dis(gen); // Random between 0 and 1 (hemisphere)
+        
+        // Normalize and scale by random distance
+        sample = normalized(sample);
+        sample = sample * dis(gen); // Scale by random distance for better distribution
+        
+        kernel.push_back(sample);
+    }
+}
+
+void SSAOData::generate_noise() {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> dis(0.0f, 1.0f);
+    
+    noise.clear();
+    noise.reserve(16 * 16); // 16x16 noise texture
+    
+    for (int i = 0; i < 16 * 16; i++) {
+        vec3 noise_vec;
+        noise_vec.x = dis(gen) * 2.0f - 1.0f; // Random between -1 and 1
+        noise_vec.y = dis(gen) * 2.0f - 1.0f;
+        noise_vec.z = 0.0f; // Z component not used for rotation
+        
+        noise.push_back(normalized(noise_vec));
+    }
+}
+
+void SSAOData::update_depth_buffer(const std::vector<double>& scene_depth) {
+    depth_buffer = scene_depth;
+}
+
+float SSAOData::calculate_occlusion(int x, int y, const SSAOParams& params) const {
+    if (x < 0 || x >= width || y < 0 || y >= height) return 1.0f;
+    
+    float current_depth = (float)depth_buffer[y * width + x];
+    if (current_depth <= 0.0f) return 1.0f; // No occlusion for background
+    
+    float occlusion = 0.0f;
+    int sample_count = std::min(params.kernel_size, (int)kernel.size());
+    int valid_samples = 0;
+    
+    // Get noise rotation for this pixel
+    int noise_x = x % 16;
+    int noise_y = y % 16;
+    vec3 noise_vec = noise[noise_y * 16 + noise_x];
+    
+    for (int i = 0; i < sample_count; i++) {
+        vec3 sample = kernel[i];
+        
+        // Rotate sample by noise vector
+        vec3 rotated_sample;
+        rotated_sample.x = sample.x * noise_vec.x - sample.y * noise_vec.y;
+        rotated_sample.y = sample.x * noise_vec.y + sample.y * noise_vec.x;
+        rotated_sample.z = sample.z;
+        
+        // Scale by radius (use larger scale for more visible effect)
+        vec3 scaled_sample = rotated_sample * params.radius;
+        
+        // Sample position
+        int sample_x = x + (int)scaled_sample.x;
+        int sample_y = y + (int)scaled_sample.y;
+        
+        if (sample_x < 0 || sample_x >= width || sample_y < 0 || sample_y >= height) {
+            continue;
+        }
+        
+        float sample_depth = (float)depth_buffer[sample_y * width + sample_x];
+        if (sample_depth <= 0.0f) continue;
+        
+        valid_samples++;
+        
+        // Calculate depth difference (positive means sample is closer to camera)
+        float depth_diff = current_depth - sample_depth;
+        
+        // Check if sample is occluded (sample is closer and within bias)
+        if (depth_diff > params.bias) {
+            // Calculate range attenuation based on distance
+            float distance = std::sqrt(scaled_sample.x * scaled_sample.x + scaled_sample.y * scaled_sample.y);
+            float range = std::max(0.0f, 1.0f - distance / params.radius);
+            occlusion += range * (depth_diff / params.radius);
+        }
+    }
+    
+    if (valid_samples == 0) return 1.0f;
+    
+    // Normalize and apply power
+    occlusion = occlusion / valid_samples;
+    occlusion = std::pow(occlusion, params.power);
+    return std::max(0.0f, 1.0f - occlusion * params.intensity);
+}
+
+void apply_ssao(std::vector<Color>& framebuffer, const std::vector<double>& depth_buffer, 
+                const SSAOData& ssao_data, const SSAOParams& params, int width, int height) {
+    // Update SSAO depth buffer
+    const_cast<SSAOData&>(ssao_data).update_depth_buffer(depth_buffer);
+    
+    // Apply SSAO to each pixel
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            float occlusion_factor = ssao_data.calculate_occlusion(x, y, params);
+            
+            // Apply occlusion to the pixel with enhanced contrast
+            int pixel_idx = y * width + x;
+            Color& pixel = framebuffer[pixel_idx];
+            
+            // Apply occlusion with enhanced contrast for visibility
+            float enhanced_factor = std::max(0.2f, occlusion_factor); // Minimum brightness of 20%
+            pixel.r = (unsigned char)(pixel.r * enhanced_factor);
+            pixel.g = (unsigned char)(pixel.g * enhanced_factor);
+            pixel.b = (unsigned char)(pixel.b * enhanced_factor);
+        }
+    }
+}
+
+void render_with_ssao(const std::vector<ObjModel>& models, std::vector<Color>& framebuffer, 
+                      std::vector<double>& zbuffer, const mat<4,4>& Model, 
+                      const ShadowMap& shadow_map, const SSAOData& ssao_data, const SSAOParams& ssao_params,
+                      bool smooth_shading, bool use_normal_mapping, bool use_color_texture) {
+    // First render the scene normally with shadows
+    cpu_rasterize_models_with_shadows(models, framebuffer, zbuffer, Model, shadow_map, 
+                                     smooth_shading, use_normal_mapping, use_color_texture);
+    
+    // Then apply SSAO
+    apply_ssao(framebuffer, zbuffer, ssao_data, ssao_params, 800, 800);
 }

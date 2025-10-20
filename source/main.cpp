@@ -33,6 +33,8 @@ ShadingMode current_shading = SMOOTH_SHADING;
 bool use_shadow_mapping = true;  // Enabled by default
 bool use_fast_shadows = true;  // Use simplified shadow calculation
 ShadowMap shadow_map(512, 512);  // Shadow map resolution (width, height)
+SSAOData ssao_data(800, 800);  // SSAO data for screen resolution (integrated with shadow mapping)
+SSAOParams ssao_params;  // SSAO parameters
 double last_angleX = -999, last_angleY = -999;  // Track rotation changes
 
 
@@ -180,8 +182,8 @@ void render_frame(const std::vector<ObjModel>& models, std::vector<Color>& frame
         bool use_color_texture = (current_shading == COLOR_TEXTURE || current_shading == NORMAL_AND_COLOR);
         
         if (use_shadow_mapping) {
-            // Use shadow mapping
-            cpu_rasterize_models_with_shadows(models, framebuffer, zbuffer, Model, shadow_map, use_smooth_shading, use_normal_mapping, use_color_texture);
+            // Use shadow mapping with integrated SSAO
+            render_with_ssao(models, framebuffer, zbuffer, Model, shadow_map, ssao_data, ssao_params, use_smooth_shading, use_normal_mapping, use_color_texture);
         } else {
             // Use regular rendering without shadows
             cpu_rasterize_models(models, framebuffer, zbuffer, Model, use_smooth_shading, use_normal_mapping, use_color_texture);
@@ -262,7 +264,7 @@ void render_frame(const std::vector<ObjModel>& models, std::vector<Color>& frame
     snprintf(shadow_text, sizeof(shadow_text), "Shadow Mapping: %s", shadow_status);
     DrawText(shadow_text, 10, 127, 18, MAGENTA);
     
-    DrawText("Arrow keys: rotate | Space: mode | S: cycle shading | H: toggle shadows", 10, 150, 16, WHITE);
+    DrawText("Arrow keys: rotate | Space: mode | S: cycle shading | H: toggle shadows (with SSAO)", 10, 150, 16, WHITE);
     
     EndDrawing();
     
@@ -363,7 +365,7 @@ int main(int argc, char** argv) {
             s_pressed = false;
         }
         
-        // Check for shadow mapping toggle (H key)
+        // Check for shadow mapping toggle (H key) - now includes SSAO
         static bool h_pressed = false;
         if (viewer_key_down(ViewerKey_H)) {
             if (!h_pressed) {

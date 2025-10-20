@@ -58,6 +58,33 @@ struct ShadowMap {
     }
 };
 
+// SSAO structures
+struct SSAOParams {
+    float radius = 2.0f;           // Sample radius (increased for visibility)
+    float bias = 0.1f;             // Depth bias (increased)
+    int kernel_size = 32;          // Number of sample points (increased)
+    float intensity = 2.0f;        // SSAO intensity (increased)
+    float power = 1.5f;            // Power for falloff (reduced for more linear effect)
+};
+
+struct SSAOData {
+    std::vector<vec3> kernel;      // Sample kernel
+    std::vector<vec3> noise;       // Random noise texture
+    std::vector<double> depth_buffer; // Scene depth buffer
+    int width, height;
+    
+    SSAOData(int w, int h) : width(w), height(h) {
+        depth_buffer.resize(w * h, 0.0);
+        generate_kernel();
+        generate_noise();
+    }
+    
+    void generate_kernel();
+    void generate_noise();
+    void update_depth_buffer(const std::vector<double>& scene_depth);
+    float calculate_occlusion(int x, int y, const SSAOParams& params) const;
+};
+
 // Function declarations
 vec3 calculate_phong_lighting(const vec3& worldPos, const vec3& normal, const RenderMaterial& mat, const Light& light, const vec3& viewPos);
 vec3 calculate_phong_lighting_with_shadows(const vec3& worldPos, const vec3& normal, const RenderMaterial& mat, const Light& light, const vec3& viewPos, const ShadowMap& shadow_map);
@@ -88,3 +115,11 @@ void rasterize_fast_shadows(const vec4 clip[3], const vec3 worldPos[3], const ve
                            bool use_normal_mapping = true, bool use_color_texture = false);
 std::vector<vec3> calculate_vertex_normals(const ObjModel& model);
 void calculate_tangent_space(const ObjModel& model, int face_idx, vec3& tangent, vec3& bitangent);
+
+// SSAO function declarations
+void apply_ssao(std::vector<Color>& framebuffer, const std::vector<double>& depth_buffer, 
+                const SSAOData& ssao_data, const SSAOParams& params, int width, int height);
+void render_with_ssao(const std::vector<ObjModel>& models, std::vector<Color>& framebuffer, 
+                      std::vector<double>& zbuffer, const mat<4,4>& Model, 
+                      const ShadowMap& shadow_map, const SSAOData& ssao_data, const SSAOParams& ssao_params,
+                      bool smooth_shading = true, bool use_normal_mapping = true, bool use_color_texture = false);
