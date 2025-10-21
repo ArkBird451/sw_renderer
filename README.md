@@ -2,9 +2,17 @@
 
 A CPU-based 3D software renderer implemented in C++ with multiple rendering modes including Phong lighting, toon shading, and interactive model viewing.
 
-![alt text](<Screenshot 2025-10-08 180450.png>)
+# Sample running
 
-![alt text](<Screenshot2 2025-10-08 180513.png>)
+![alt text](<Screenshot 2025-10-21 154611.png>)
+
+![alt text](<Screenshot 2025-10-21 1546443.png>)
+
+![alt text](<Screenshot 2025-10-21 1547145.png>)
+
+![alt text](<Screenshot 2025-10-21 1551516.png>)
+
+![alt text](<Screenshot 2025-10-21 1553316.png>)
 
 ## Features
 
